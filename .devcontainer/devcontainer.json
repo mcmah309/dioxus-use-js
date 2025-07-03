@@ -1,0 +1,58 @@
+// For format details, see https://aka.ms/devcontainer.json. For config options, see the
+{
+	"name": "dioxus",
+	"image": "dioxus",
+	"customizations": {
+		"vscode": {
+			"extensions": [
+				// general tools
+				"chunsen.bracket-select",
+				"dzhavat.bracket-pair-toggler",
+				"oderwat.indent-rainbow",
+				"fabiospampinato.vscode-git-history",
+				"streetsidesoftware.code-spell-checker",
+				"rebornix.toggle", // used in settings.json to add a toggle for inlay hints in rust - `ctrl+q`
+				"ryuta46.multi-command", // used in settings.json to add custom command combinators
+				
+				// rust
+				"fill-labs.dependi", // dependency validation in Cargo.toml
+				"tamasfe.even-better-toml", // toml lsp
+				"redhat.vscode-yaml", // yaml lsp
+				"rust-lang.rust-analyzer", // rust lsp
+				"vadimcn.vscode-lldb", // rust debugger
+				
+				
+				// dioxus
+				"dioxuslabs.dioxus",
+				
+				
+				
+				
+				// web
+				"ecmel.vscode-html-css", // html/css support
+				"bradlc.vscode-tailwindcss", // tailwind css support
+				"jock.svg", // svg language support
+				"vincaslt.highlight-matching-tag", // highlights matching html tags
+				"pranaygp.vscode-css-peek", // Go to definition for css
+				"ms-vscode.live-server", // live preview of html
+				
+				
+				// sh
+				"timonwong.shellcheck", // sh lsp
+				
+			]
+		}
+	},
+	"mounts": [
+	],
+	"runArgs": [
+		"--privileged",
+		"--net=host",
+		// ssh
+		"-v", "/home/henry/.ssh/:/root/.ssh",
+		
+		
+	],
+	
+	"remoteUser": "root",
+}
