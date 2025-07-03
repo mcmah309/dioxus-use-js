@@ -1,4 +1,6 @@
 [workspace]
+resolver = "3"
+
 members = [
     "dioxus-use-js",
     "example"
