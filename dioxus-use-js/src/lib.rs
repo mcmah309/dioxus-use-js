@@ -375,6 +375,7 @@ fn generate_function_wrapper(func: &FunctionInfo, asset_path: &LitStr) -> TokenS
         .unwrap_or_else(|| Ident::new(func.name.as_str(), proc_macro2::Span::call_site()));
     quote! {
         #doc_comment
+        #[allow(non_snake_case)]
         pub async fn #func_name(#(#param_types),*) -> Result<serde_json::Value, document::EvalError> {
             const MODULE: Asset = asset!(#asset_path);
             let js = format!(#js_format, MODULE);
