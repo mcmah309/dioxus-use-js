@@ -4,19 +4,20 @@ use proc_macro::TokenStream;
 use proc_macro2::TokenStream as TokenStream2;
 use quote::{format_ident, quote};
 use std::{fs, path::Path};
-use swc_common::comments::{CommentKind, Comments};
 use swc_common::Spanned;
-use swc_common::{comments::SingleThreadedComments, SourceMap, Span};
+use swc_common::comments::{CommentKind, Comments};
+use swc_common::{SourceMap, Span, comments::SingleThreadedComments};
 use swc_ecma_ast::{
     Decl, ExportDecl, ExportSpecifier, FnDecl, ModuleExportName, NamedExport, Param, Pat,
     VarDeclarator,
 };
 use swc_ecma_parser::EsSyntax;
-use swc_ecma_parser::{lexer::Lexer, Parser, StringInput, Syntax};
+use swc_ecma_parser::{Parser, StringInput, Syntax, lexer::Lexer};
 use swc_ecma_visit::{Visit, VisitWith};
 use syn::{
+    Ident, LitStr, Result, Token,
     parse::{Parse, ParseStream},
-    parse_macro_input, Ident, LitStr, Result, Token,
+    parse_macro_input,
 };
 
 #[derive(Debug, Clone)]
@@ -289,15 +290,25 @@ fn parse_js_file(file_path: &Path) -> Result<Vec<FunctionInfo>> {
     Ok(visitor.functions)
 }
 
-fn remove_function_info(name: &str, functions: &mut Vec<FunctionInfo>) -> Result<FunctionInfo> {
-    if let Some(pos) = functions.iter().position(|f| f.name == name) {
-        Ok(functions.remove(pos))
+fn remove_valid_function_info(
+    name: &str,
+    functions: &mut Vec<FunctionInfo>,
+) -> Result<FunctionInfo> {
+    let function_info = if let Some(pos) = functions.iter().position(|f| f.name == name) {
+        functions.remove(pos)
     } else {
-        Err(syn::Error::new(
+        return Err(syn::Error::new(
             proc_macro2::Span::call_site(),
             format!("Function '{}' not found in JavaScript file", name),
-        ))
+        ));
+    };
+    if !function_info.is_exported {
+        return Err(syn::Error::new(
+            proc_macro2::Span::call_site(),
+            format!("Function '{}' not exported in JavaScript file", name),
+        ));
     }
+    Ok(function_info)
 }
 
 fn get_functions_to_generate(
@@ -307,14 +318,15 @@ fn get_functions_to_generate(
     match import_spec {
         ImportSpec::All => Ok(functions),
         ImportSpec::Single(name) => {
-            let mut func = remove_function_info(name.to_string().as_str(), &mut functions)?;
+            let mut func = remove_valid_function_info(name.to_string().as_str(), &mut functions)?;
             func.name_ident.replace(name);
             Ok(vec![func])
         }
         ImportSpec::Named(names) => {
             let mut result = Vec::new();
             for name in names {
-                let mut func = remove_function_info(name.to_string().as_str(), &mut functions)?;
+                let mut func =
+                    remove_valid_function_info(name.to_string().as_str(), &mut functions)?;
                 func.name_ident.replace(name);
                 result.push(func);
             }
