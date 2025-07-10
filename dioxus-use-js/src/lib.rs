@@ -1,3 +1,5 @@
+#![doc = include_str!("../README.md")]
+
 use proc_macro::TokenStream;
 use proc_macro2::TokenStream as TokenStream2;
 use quote::{format_ident, quote};
@@ -387,17 +389,18 @@ fn generate_function_wrapper(func: &FunctionInfo, asset_path: &LitStr) -> TokenS
 }
 
 /// A macro to create rust binding to javascript functions.
-///```rust,ignore
+///```rust,no_run
 /// use dioxus::prelude::*;
+/// use dioxus_use_js::use_js;
 ///
 /// // Generate the greeting function at compile time
-/// use_js!("examples/assets/example.js"::greeting);
+/// use_js!("example/assets/example.js"::greeting);
 ///
 ///  // Or generate multiple functions:
-///  // use_js!("examples/assets/example.js"::{greeting, add});
+///  // use_js!("example/assets/example.js"::{greeting, add});
 ///
 ///  // Or generate all exported functions:
-///  // use_js!("examples/assets/example.js"::*);
+///  // use_js!("example/assets/example.js"::*);
 ///
 /// fn main() {
 ///     launch(App);
