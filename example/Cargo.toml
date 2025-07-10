@@ -1,4 +1,5 @@
 [package]
+publish = false
 name = "example"
 version = "0.1.0"
 authors = ["mcmah309 <dillonmcmahon79@gmail.com>"]
