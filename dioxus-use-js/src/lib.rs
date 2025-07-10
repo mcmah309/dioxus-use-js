@@ -1,6 +1,6 @@
 #![doc = include_str!("../README.md")]
 
-pub use dioxus_use_js_impl::*;
+pub use dioxus_use_js_macro::*;
 
 pub fn deserialize<T: serde::de::DeserializeOwned>(
     value: Result<serde_json::Value, dioxus_document::EvalError>,

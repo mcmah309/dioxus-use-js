@@ -2,7 +2,7 @@
 resolver = "3"
 
 members = [
-    "dioxus-use-js-impl",
+    "dioxus-use-js-macro",
     "dioxus-use-js",
     "example"
 ]

@@ -1109,13 +1109,13 @@ name = "dioxus-use-js"
 version = "0.1.3"
 dependencies = [
  "dioxus-document",
- "dioxus-use-js-impl",
+ "dioxus-use-js-macro",
  "serde",
  "serde_json",
 ]
 
 [[package]]
-name = "dioxus-use-js-impl"
+name = "dioxus-use-js-macro"
 version = "0.1.3"
 dependencies = [
  "dioxus",
