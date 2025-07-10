@@ -347,17 +347,6 @@ fn generate_function_wrapper(func: &FunctionInfo, asset_path: &LitStr) -> TokenS
         })
         .collect();
 
-    let deserialize_calls: Vec<TokenStream2> = func
-        .params
-        .iter()
-        .map(|param| {
-            let param = format_ident!("{}", param);
-            quote! {
-                #param
-            }
-        })
-        .collect();
-
     let js_func_name = &func.name;
     let mut js_format = format!(r#"const {{{{ {js_func_name} }}}} = await import("{{}}");"#);
     for param in func.params.iter() {
@@ -398,10 +387,6 @@ fn generate_function_wrapper(func: &FunctionInfo, asset_path: &LitStr) -> TokenS
         .clone()
         // Can not exist if `::*`
         .unwrap_or_else(|| Ident::new(func.name.as_str(), proc_macro2::Span::call_site()));
-    let func_name_deserialize = Ident::new(
-        format!("{}_deserialize", func.name.as_str()).as_str(),
-        func_name.span(),
-    );
     quote! {
         #doc_comment
         #[allow(non_snake_case)]
@@ -411,12 +396,6 @@ fn generate_function_wrapper(func: &FunctionInfo, asset_path: &LitStr) -> TokenS
             let eval = document::eval(js.as_str());
             #(#send_calls)*
             eval.await
-        }
-
-        #doc_comment
-        #[allow(non_snake_case)]
-        pub async fn #func_name_deserialize<T: serde::de::DeserializeOwned>(#(#param_types),*) -> Result<T, dioxus_use_js::JsError> {
-            dioxus_use_js::deserialize(#func_name(#(#deserialize_calls),*).await)
         }
     }
 }
