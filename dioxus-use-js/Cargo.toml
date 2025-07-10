@@ -5,7 +5,7 @@ authors = ["Dillon Henry McMahon"]
 edition = "2024"
 description = "javascript use bridge macro for Dioxus"
 license = "MIT OR Apache-2.0"
-repository = "https://github.com/mcmah309/dioxus_use_js"
+repository = "https://github.com/mcmah309/dioxus-use-js"
 
 [lib]
 proc-macro = true
