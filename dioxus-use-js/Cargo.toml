@@ -1,6 +1,6 @@
 [package]
 name = "dioxus-use-js"
-version = "0.1.1"
+version = "0.1.2"
 authors = ["Dillon Henry McMahon"]
 edition = "2024"
 description = "javascript use bridge macro for Dioxus"
