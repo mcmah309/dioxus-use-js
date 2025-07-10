@@ -5,10 +5,10 @@ use dioxus_use_js::use_js;
 use_js!("assets/example.js"::greeting);
 
 // Or generate multiple functions:
-// use_js!("examples/assets/example.js"::{greeting, add});
+// use_js!("assets/example.js"::{greeting, add});
 
 // Or generate all exported functions:
-// use_js!("examples/assets/example.js"::*);
+// use_js!("assets/example.js"::*);
 
 fn main() {
     launch(App);
