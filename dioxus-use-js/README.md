@@ -1,6 +1,6 @@
 # dioxus-use-js macro
 
-A to create rust binding to javascript functions
+A [Dioxus](https://github.com/DioxusLabs/dioxus) specific macro that does compile time validation and creates rust bindings to javascript functions. Works like a regular use import statement. 
 
 ## Usage
 Example:
