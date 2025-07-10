@@ -1,5 +1,5 @@
 use dioxus::prelude::*;
-use dioxus_use_js::use_js;
+use dioxus_use_js::{deserialize, use_js, JsError};
 
 // Generate the greeting function at compile time
 use_js!("assets/example.js"::greeting);
@@ -16,17 +16,12 @@ fn main() {
 
 #[component]
 fn App() -> Element {
-    let future = use_resource(|| async move {
+    let future: Resource<Result<String, JsError>> = use_resource(|| async move {
         let from = "dave";
         let to = "john";
 
         // Now we can call the generated function directly!
-        let greeting_result = greeting(from, to)
-            .await
-            .map_err(Box::<dyn std::error::Error>::from)?;
-        let greeting: String =
-            serde_json::from_value(greeting_result).map_err(Box::<dyn std::error::Error>::from)?;
-        Ok::<String, Box<dyn std::error::Error>>(greeting)
+        deserialize(greeting(from, to).await)
     });
 
     rsx!(
