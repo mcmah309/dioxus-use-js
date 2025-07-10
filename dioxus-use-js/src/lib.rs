@@ -2,14 +2,23 @@
 
 pub use dioxus_use_js_macro::*;
 
-pub fn deserialize<T: serde::de::DeserializeOwned>(
-    value: Result<serde_json::Value, dioxus_document::EvalError>,
-) -> Result<T, JsError> {
-    value
-        .map_err(JsError::Eval)
-        .and_then(|v| serde_json::from_value(v).map_err(JsError::Deserialize))
+pub trait EvalResultExt {
+    fn deserialize<T: serde::de::DeserializeOwned>(
+        self
+    ) -> Result<T, JsError>;
 }
 
+impl EvalResultExt for Result<serde_json::Value, dioxus_document::EvalError> {
+    fn deserialize<T: serde::de::DeserializeOwned>(
+        self
+    ) -> Result<T, JsError> {
+        self
+        .map_err(JsError::Eval)
+        .and_then(|v| serde_json::from_value(v).map_err(JsError::Deserialize))
+    }
+}
+
+/// An error related to the execution of a javascript operation
 #[derive(Debug)]
 pub enum JsError {
     Eval(dioxus_document::EvalError),

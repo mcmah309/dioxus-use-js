@@ -1,5 +1,5 @@
 use dioxus::prelude::*;
-use dioxus_use_js::{deserialize, use_js, JsError};
+use dioxus_use_js::{use_js, EvalResultExt, JsError};
 
 // Generate the greeting function at compile time
 use_js!("assets/example.js"::greeting);
@@ -21,7 +21,7 @@ fn App() -> Element {
         let to = "john";
 
         // Now we can call the generated function directly!
-        deserialize(greeting(from, to).await)
+        greeting(from, to).await.deserialize()
     });
 
     rsx!(
