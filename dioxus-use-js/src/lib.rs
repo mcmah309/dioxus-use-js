@@ -82,7 +82,7 @@ return null;
                 );
             } else {
                 dioxus::logger::tracing::trace!(
-                    "Successfully cleaned up JavaScript object `window[\"{object_name}\"]`."
+                    "Successfully dropped JsValue and cleaned up JavaScript object `window[\"{object_name}\"]`."
                 );
             }
         });

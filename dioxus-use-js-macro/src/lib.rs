@@ -613,16 +613,15 @@ fn generate_function_wrapper(func: &FunctionInfo, asset_path: &LitStr) -> TokenS
         })
         .collect::<Vec<_>>()
         .join("\n");
-
+    let mut await_fn = String::new();
+    if func.is_async {
+        await_fn.push_str("await");
+    }
     let end_statement = if func
         .return_type
         .as_ref()
         .is_some_and(|v| v.as_str() == JSVALUE_RUST)
     {
-        let mut await_fn = String::new();
-        if func.is_async {
-            await_fn.push_str("await");
-        }
         format!(
             r#"
 const ___result___ = {await_fn} {js_func_name}({params_list});
@@ -632,7 +631,14 @@ return ___id___;
         "#
         )
     } else {
-        format!("return {js_func_name}({params_list});")
+        // eval will fail if returning undefined. undefined happens if there is no return type
+        format!(
+            r#"
+const ___result___ = {await_fn} {js_func_name}({params_list});
+if (___result___ === undefined) {{{{ return null; }}}}
+return ___result___;
+"#
+        )
     };
 
     let js_format = format!(
