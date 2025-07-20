@@ -561,7 +561,7 @@ fn generate_function_wrapper(func: &FunctionInfo, asset_path: &LitStr) -> TokenS
         .map(|param| {
             let param_name = format_ident!("{}", param.name);
             quote! {
-                eval.send(#param_name)?;
+                eval.send(#param_name).map_err(dioxus_use_js::JsError::Eval)?;
             }
         })
         .collect();
@@ -612,13 +612,13 @@ return {js_func_name}({params_list});
     let return_type_tokens = if let Some(return_type) = &func.return_type {
         // Try to parse the return type, but fall back to serde_json::Value if parsing fails
         if let Ok(parsed_type) = return_type.parse::<TokenStream2>() {
-            quote! { Result<#parsed_type, dioxus::document::EvalError> }
+            quote! { Result<#parsed_type, dioxus_use_js::JsError> }
         } else {
-            quote! { Result<serde_json::Value, dioxus::document::EvalError> }
+            quote! { Result<serde_json::Value, dioxus_use_js::JsError> }
         }
     } else {
         // Default case: no return type information available
-        quote! { Result<serde_json::Value, dioxus::document::EvalError> }
+        quote! { Result<serde_json::Value, dioxus_use_js::JsError> }
     };
 
     // Generate documentation comment if available - preserve original JSDoc format
@@ -648,6 +648,8 @@ return {js_func_name}({params_list});
             let eval = dioxus::document::eval(js.as_str());
             #(#send_calls)*
             eval.await
+                .map_err(dioxus_use_js::JsError::Eval)
+                .and_then(|v| serde_json::from_value(v).map_err(dioxus_use_js::JsError::Deserialize))
         }
     }
 }
