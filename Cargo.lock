@@ -1108,7 +1108,7 @@ dependencies = [
 name = "dioxus-use-js"
 version = "0.1.3"
 dependencies = [
- "dioxus-document",
+ "dioxus",
  "dioxus-use-js-macro",
  "serde",
  "serde_json",

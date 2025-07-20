@@ -142,6 +142,7 @@ struct FunctionInfo {
     params: Vec<ParamInfo>,
     return_type: Option<String>,
     is_exported: bool,
+    is_async: bool,
     /// The stripped lines
     doc_comment: Vec<String>,
 }
@@ -339,6 +340,7 @@ impl Visit for FunctionVisitor {
             params,
             return_type,
             is_exported: false,
+            is_async: node.function.is_async,
             doc_comment,
         });
         node.visit_children_with(self);
@@ -369,6 +371,7 @@ impl Visit for FunctionVisitor {
                             params,
                             return_type,
                             is_exported: false,
+                            is_async: fn_expr.function.is_async,
                             doc_comment,
                         });
                     }
@@ -386,6 +389,7 @@ impl Visit for FunctionVisitor {
                             params,
                             return_type,
                             is_exported: false,
+                            is_async: arrow_fn.is_async,
                             doc_comment,
                         });
                     }
@@ -414,6 +418,7 @@ impl Visit for FunctionVisitor {
                 params,
                 return_type,
                 is_exported: true,
+                is_async: fn_decl.function.is_async,
                 doc_comment,
             });
         }
@@ -523,7 +528,11 @@ fn remove_valid_function_info(
     if !function_info.is_exported {
         return Err(syn::Error::new(
             proc_macro2::Span::call_site(),
-            format!("Function '{}' not exported in file '{}'", name, file.display()),
+            format!(
+                "Function '{}' not exported in file '{}'",
+                name,
+                file.display()
+            ),
         ));
     }
     Ok(function_info)
@@ -537,7 +546,8 @@ fn get_functions_to_generate(
     match import_spec {
         ImportSpec::All => Ok(functions),
         ImportSpec::Single(name) => {
-            let mut func = remove_valid_function_info(name.to_string().as_str(), &mut functions, file)?;
+            let mut func =
+                remove_valid_function_info(name.to_string().as_str(), &mut functions, file)?;
             func.name_ident.replace(name.clone());
             Ok(vec![func])
         }
@@ -560,8 +570,19 @@ fn generate_function_wrapper(func: &FunctionInfo, asset_path: &LitStr) -> TokenS
         .iter()
         .map(|param| {
             let param_name = format_ident!("{}", param.name);
-            quote! {
-                eval.send(#param_name).map_err(dioxus_use_js::JsError::Eval)?;
+            if param
+                .rust_type
+                .as_ref()
+                .is_some_and(|v| v.as_str() == JSVALUE_RUST)
+            {
+                quote! {
+                    #[allow(deprecated)]
+                    eval.send(#param_name.internal_get()).map_err(dioxus_use_js::JsError::Eval)?;
+                }
+            } else {
+                quote! {
+                    eval.send(#param_name).map_err(dioxus_use_js::JsError::Eval)?;
+                }
             }
         })
         .collect();
@@ -576,15 +597,49 @@ fn generate_function_wrapper(func: &FunctionInfo, asset_path: &LitStr) -> TokenS
     let recv_lines = func
         .params
         .iter()
-        .map(|param| format!("let {} = await dioxus.recv();", param.name))
+        .map(|param| {
+            if param
+                .rust_type
+                .as_ref()
+                .is_some_and(|v| v.as_str() == JSVALUE_RUST)
+            {
+                format!(
+                    "let {}Temp_ = await dioxus.recv();\nlet {} = window[{}Temp_];",
+                    param.name, param.name, param.name
+                )
+            } else {
+                format!("let {} = await dioxus.recv();", param.name)
+            }
+        })
         .collect::<Vec<_>>()
         .join("\n");
+
+    let end_statement = if func
+        .return_type
+        .as_ref()
+        .is_some_and(|v| v.as_str() == JSVALUE_RUST)
+    {
+        let mut await_fn = String::new();
+        if func.is_async {
+            await_fn.push_str("await");
+        }
+        format!(
+            r#"
+const ___result___ = {await_fn} {js_func_name}({params_list});
+const ___id___ = crypto.randomUUID();
+window[___id___] = ___result___;
+return ___id___;
+        "#
+        )
+    } else {
+        format!("return {js_func_name}({params_list});")
+    };
 
     let js_format = format!(
         r#"
 const {{{{ {js_func_name} }}}} = await import("{{}}");
 {recv_lines}
-return {js_func_name}({params_list});
+{end_statement}
 "#
     );
 
@@ -598,6 +653,9 @@ return {js_func_name}({params_list});
                 // Try to parse the type, but fall back to impl serde::Serialize if parsing fails
                 if let Ok(type_tokens) = rust_type.parse::<TokenStream2>() {
                     quote! { #param_name: &#type_tokens }
+                } else if rust_type.as_str() == JSVALUE_RUST {
+                    let js_value_type = format_ident!("{}", JSVALUE_RUST);
+                    quote! { #param_name: &#js_value_type }
                 } else {
                     quote! { #param_name: impl serde::Serialize }
                 }
@@ -639,6 +697,28 @@ return {js_func_name}({params_list});
         // Can not exist if `::*`
         .unwrap_or_else(|| Ident::new(func.name.as_str(), proc_macro2::Span::call_site()));
 
+    let return_value = if func
+        .return_type
+        .as_ref()
+        .is_some_and(|v| v.as_str() == JSVALUE_RUST)
+    {
+        quote! {
+        let id: String = eval
+            .await
+            .map_err(dioxus_use_js::JsError::Eval)
+            .and_then(|v| serde_json::from_value(v).map_err(dioxus_use_js::JsError::Deserialize))?;
+            #[allow(deprecated)]
+            Ok(dioxus_use_js::JsValue::internal_create(id))
+        }
+    } else {
+        quote! {
+            eval
+                .await
+                .map_err(dioxus_use_js::JsError::Eval)
+                .and_then(|v| serde_json::from_value(v).map_err(dioxus_use_js::JsError::Deserialize))
+        }
+    };
+
     quote! {
         #doc_comment
         #[allow(non_snake_case)]
@@ -647,9 +727,7 @@ return {js_func_name}({params_list});
             let js = format!(#js_format, MODULE);
             let eval = dioxus::document::eval(js.as_str());
             #(#send_calls)*
-            eval.await
-                .map_err(dioxus_use_js::JsError::Eval)
-                .and_then(|v| serde_json::from_value(v).map_err(dioxus_use_js::JsError::Deserialize))
+            #return_value
         }
     }
 }
@@ -737,10 +815,11 @@ pub fn use_js(input: TokenStream) -> TokenStream {
         Err(e) => return TokenStream::from(e.to_compile_error()),
     };
 
-    let js_functions_to_generate = match get_functions_to_generate(js_all_functions, &import_spec, &js_file_path) {
-        Ok(funcs) => funcs,
-        Err(e) => return TokenStream::from(e.to_compile_error()),
-    };
+    let js_functions_to_generate =
+        match get_functions_to_generate(js_all_functions, &import_spec, &js_file_path) {
+            Ok(funcs) => funcs,
+            Err(e) => return TokenStream::from(e.to_compile_error()),
+        };
 
     let functions_to_generate = if let Some(ts_file_path) = ts_source_path {
         let ts_file_path = std::path::Path::new(&manifest_dir).join(ts_file_path.value());
@@ -772,8 +851,7 @@ pub fn use_js(input: TokenStream) -> TokenStream {
                     )
                     .to_compile_error());
                 }
-            }
-            else {
+            } else {
                 return TokenStream::from(syn::Error::new(
                     proc_macro2::Span::call_site(),
                     format!(
