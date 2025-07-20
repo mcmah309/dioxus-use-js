@@ -348,18 +348,21 @@ fn generate_function_wrapper(func: &FunctionInfo, asset_path: &LitStr) -> TokenS
         .collect();
 
     let js_func_name = &func.name;
-    let mut js_format = format!(r#"const {{{{ {js_func_name} }}}} = await import("{{}}");"#);
-    for param in func.params.iter() {
-        js_format.push_str(&format!("\nlet {} = await dioxus.recv();", param));
-    }
-    js_format.push_str(&format!("\nreturn {}(", js_func_name));
-    for (i, param) in func.params.iter().enumerate() {
-        if i > 0 {
-            js_format.push_str(", ");
-        }
-        js_format.push_str(param.as_str());
-    }
-    js_format.push_str(");");
+    let params_list = func.params.join(", ");
+    let recv_lines = func
+        .params
+        .iter()
+        .map(|param| format!("let {param} = await dioxus.recv();"))
+        .collect::<Vec<_>>()
+        .join("\n");
+
+    let js_format = format!(
+        r#"
+const {{{{ {js_func_name} }}}} = await import("{{}}");
+{recv_lines}
+return {js_func_name}({params_list});
+"#
+    );
 
     let param_types: Vec<_> = func
         .params
