@@ -34,47 +34,97 @@ enum ImportSpec {
 }
 
 struct UseJsInput {
-    asset_path: LitStr,
+    js_bundle_path: LitStr,
+    ts_source_path: Option<LitStr>,
     import_spec: ImportSpec,
+}
+
+/// Reusable parsing for `ImportSpec`
+fn parse_import_spec(input: ParseStream) -> Result<ImportSpec> {
+    if input.peek(Token![*]) {
+        input.parse::<Token![*]>()?;
+        Ok(ImportSpec::All)
+    } else if input.peek(syn::token::Brace) {
+        let content;
+        syn::braced!(content in input);
+        let mut functions = Vec::new();
+        while !content.is_empty() {
+            let ident: Ident = content.parse()?;
+            functions.push(ident);
+            if content.peek(Token![,]) {
+                content.parse::<Token![,]>()?;
+            }
+        }
+        Ok(ImportSpec::Named(functions))
+    } else {
+        let ident: Ident = input.parse()?;
+        Ok(ImportSpec::Single(ident))
+    }
 }
 
 impl Parse for UseJsInput {
     fn parse(input: ParseStream) -> Result<Self> {
-        let asset_path: LitStr = input.parse()?;
-        input.parse::<Token![::]>()?;
+        if input.peek(LitStr) {
+            // shorthand: "bundle_path"::import_spec
+            let js_bundle_path: LitStr = input.parse()?;
+            input.parse::<Token![::]>()?;
+            let import_spec = parse_import_spec(input)?;
 
-        let import_spec = if input.peek(Token![*]) {
-            input.parse::<Token![*]>()?;
-            ImportSpec::All
-        } else if input.peek(syn::token::Brace) {
-            let content;
-            syn::braced!(content in input);
-            let mut functions = Vec::new();
+            Ok(UseJsInput {
+                js_bundle_path,
+                ts_source_path: None,
+                import_spec,
+            })
+        } else if input.peek(Ident) {
+            // full syntax: ts: "...", bundle: "...", functions: ...
+            let mut ts_source_path = None;
+            let mut js_bundle_path = None;
+            let mut import_spec = None;
 
-            loop {
-                let ident: Ident = content.parse()?;
-                functions.push(ident);
+            while !input.is_empty() {
+                let key: Ident = input.parse()?;
+                input.parse::<Token![:]>()?;
 
-                if content.peek(Token![,]) {
-                    content.parse::<Token![,]>()?;
-                    if content.is_empty() {
-                        break;
+                match key.to_string().as_str() {
+                    "ts" => {
+                        ts_source_path = Some(input.parse::<LitStr>()?);
                     }
-                } else {
-                    break;
+                    "bundle" => {
+                        js_bundle_path = Some(input.parse::<LitStr>()?);
+                    }
+                    "functions" => {
+                        import_spec = Some(parse_import_spec(input)?);
+                    }
+                    _ => {
+                        return Err(syn::Error::new_spanned(
+                            key,
+                            "Expected one of: ts, bundle, functions",
+                        ));
+                    }
+                }
+
+                if input.peek(Token![,]) {
+                    input.parse::<Token![,]>()?;
                 }
             }
 
-            ImportSpec::Named(functions)
+            Ok(UseJsInput {
+                js_bundle_path: js_bundle_path.ok_or_else(|| {
+                    syn::Error::new(proc_macro2::Span::call_site(), "`bundle` is required")
+                })?,
+                ts_source_path: Some(ts_source_path.ok_or_else(|| {
+                    syn::Error::new(proc_macro2::Span::call_site(), "`ts` is required")
+                })?),
+                import_spec: import_spec.ok_or_else(|| {
+                    syn::Error::new(proc_macro2::Span::call_site(), "`functions` is required")
+                })?,
+            })
         } else {
-            let ident: Ident = input.parse()?;
-            ImportSpec::Single(ident)
-        };
-
-        Ok(UseJsInput {
-            asset_path,
-            import_spec,
-        })
+            Err(syn::Error::new(
+                input.span(),
+                "Expected string literal or braced block",
+            ))
+        }
     }
 }
 
@@ -153,7 +203,7 @@ fn ts_type_to_rust_type(ts_type: &str) -> Option<String> {
     ts_type_to_rust_type_helper(ts_type)
 }
 
-/// Simple converter, needs null in the second position to enable Option, handles regular ts types. 
+/// Simple converter, needs null in the second position to enable Option, handles regular ts types.
 /// Does not handle all edge cases
 fn ts_type_to_rust_type_helper(mut ts_type: &str) -> Option<String> {
     ts_type = ts_type.trim();
@@ -388,7 +438,7 @@ impl Visit for FunctionVisitor {
     }
 }
 
-fn parse_js_file(file_path: &Path) -> Result<Vec<FunctionInfo>> {
+fn parse_script_file(file_path: &Path, is_js: bool) -> Result<Vec<FunctionInfo>> {
     let js_content = fs::read_to_string(file_path).map_err(|e| {
         syn::Error::new(
             proc_macro2::Span::call_site(),
@@ -404,15 +454,7 @@ fn parse_js_file(file_path: &Path) -> Result<Vec<FunctionInfo>> {
     let comments = SingleThreadedComments::default();
 
     // Enable TypeScript parsing to handle type annotations
-    let syntax = if file_path.extension().and_then(|s| s.to_str()) == Some("ts") {
-        Syntax::Typescript(swc_ecma_parser::TsSyntax {
-            tsx: false,
-            decorators: false,
-            dts: false,
-            no_early_errors: false,
-            disallow_ambiguous_jsx_like: true,
-        })
-    } else {
+    let syntax = if is_js {
         Syntax::Es(EsSyntax {
             jsx: false,
             fn_bind: false,
@@ -424,6 +466,14 @@ fn parse_js_file(file_path: &Path) -> Result<Vec<FunctionInfo>> {
             allow_return_outside_function: false,
             auto_accessors: false,
             explicit_resource_management: false,
+        })
+    } else {
+        Syntax::Typescript(swc_ecma_parser::TsSyntax {
+            tsx: false,
+            decorators: false,
+            dts: false,
+            no_early_errors: false,
+            disallow_ambiguous_jsx_like: true,
         })
     };
 
@@ -440,7 +490,7 @@ fn parse_js_file(file_path: &Path) -> Result<Vec<FunctionInfo>> {
         syn::Error::new(
             proc_macro2::Span::call_site(),
             format!(
-                "Failed to parse JavaScript file '{}': {:?}",
+                "Failed to parse script file '{}': {:?}",
                 file_path.display(),
                 e
             ),
@@ -460,19 +510,20 @@ fn parse_js_file(file_path: &Path) -> Result<Vec<FunctionInfo>> {
 fn remove_valid_function_info(
     name: &str,
     functions: &mut Vec<FunctionInfo>,
+    file: &Path,
 ) -> Result<FunctionInfo> {
     let function_info = if let Some(pos) = functions.iter().position(|f| f.name == name) {
         functions.remove(pos)
     } else {
         return Err(syn::Error::new(
             proc_macro2::Span::call_site(),
-            format!("Function '{}' not found in JavaScript file", name),
+            format!("Function '{}' not found in file '{}'", name, file.display()),
         ));
     };
     if !function_info.is_exported {
         return Err(syn::Error::new(
             proc_macro2::Span::call_site(),
-            format!("Function '{}' not exported in JavaScript file", name),
+            format!("Function '{}' not exported in file '{}'", name, file.display()),
         ));
     }
     Ok(function_info)
@@ -480,21 +531,22 @@ fn remove_valid_function_info(
 
 fn get_functions_to_generate(
     mut functions: Vec<FunctionInfo>,
-    import_spec: ImportSpec,
+    import_spec: &ImportSpec,
+    file: &Path,
 ) -> Result<Vec<FunctionInfo>> {
     match import_spec {
         ImportSpec::All => Ok(functions),
         ImportSpec::Single(name) => {
-            let mut func = remove_valid_function_info(name.to_string().as_str(), &mut functions)?;
-            func.name_ident.replace(name);
+            let mut func = remove_valid_function_info(name.to_string().as_str(), &mut functions, file)?;
+            func.name_ident.replace(name.clone());
             Ok(vec![func])
         }
         ImportSpec::Named(names) => {
             let mut result = Vec::new();
             for name in names {
                 let mut func =
-                    remove_valid_function_info(name.to_string().as_str(), &mut functions)?;
-                func.name_ident.replace(name);
+                    remove_valid_function_info(name.to_string().as_str(), &mut functions, file)?;
+                func.name_ident.replace(name.clone());
                 result.push(func);
             }
             Ok(result)
@@ -670,23 +722,74 @@ pub fn use_js(input: TokenStream) -> TokenStream {
         }
     };
 
-    let asset_path = &input.asset_path;
-    let js_file_path = std::path::Path::new(&manifest_dir).join(asset_path.value());
+    let UseJsInput {
+        js_bundle_path,
+        ts_source_path,
+        import_spec,
+    } = input;
 
-    let all_functions = match parse_js_file(&js_file_path) {
+    let js_file_path = std::path::Path::new(&manifest_dir).join(js_bundle_path.value());
+
+    let js_all_functions = match parse_script_file(&js_file_path, true) {
         Ok(funcs) => funcs,
         Err(e) => return TokenStream::from(e.to_compile_error()),
     };
 
-    let import_spec = input.import_spec;
-    let functions_to_generate = match get_functions_to_generate(all_functions, import_spec) {
+    let js_functions_to_generate = match get_functions_to_generate(js_all_functions, &import_spec, &js_file_path) {
         Ok(funcs) => funcs,
         Err(e) => return TokenStream::from(e.to_compile_error()),
+    };
+
+    let functions_to_generate = if let Some(ts_file_path) = ts_source_path {
+        let ts_file_path = std::path::Path::new(&manifest_dir).join(ts_file_path.value());
+        let ts_all_functions = match parse_script_file(&ts_file_path, false) {
+            Ok(funcs) => funcs,
+            Err(e) => return TokenStream::from(e.to_compile_error()),
+        };
+
+        let ts_functions_to_generate =
+            match get_functions_to_generate(ts_all_functions, &import_spec, &ts_file_path) {
+                Ok(funcs) => funcs,
+                Err(e) => {
+                    return TokenStream::from(e.to_compile_error());
+                }
+            };
+
+        for ts_func in ts_functions_to_generate.iter() {
+            if let Some(js_func) = js_functions_to_generate
+                .iter()
+                .find(|f| f.name == ts_func.name)
+            {
+                if ts_func.params.len() != js_func.params.len() {
+                    return TokenStream::from(syn::Error::new(
+                        proc_macro2::Span::call_site(),
+                        format!(
+                            "Function '{}' has different parameter count in JS and TS files. Bundle may be out of date",
+                            ts_func.name
+                        ),
+                    )
+                    .to_compile_error());
+                }
+            }
+            else {
+                return TokenStream::from(syn::Error::new(
+                    proc_macro2::Span::call_site(),
+                    format!(
+                        "Function '{}' is defined in TS file but not in JS file. Bundle may be out of date",
+                        ts_func.name
+                    ),
+                )
+                .to_compile_error());
+            }
+        }
+        ts_functions_to_generate
+    } else {
+        js_functions_to_generate
     };
 
     let function_wrappers: Vec<TokenStream2> = functions_to_generate
         .iter()
-        .map(|func| generate_function_wrapper(func, asset_path))
+        .map(|func| generate_function_wrapper(func, &js_bundle_path))
         .collect();
 
     let expanded = quote! {
