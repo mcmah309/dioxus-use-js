@@ -560,13 +560,13 @@ return {js_func_name}({params_list});
     let return_type_tokens = if let Some(return_type) = &func.return_type {
         // Try to parse the return type, but fall back to serde_json::Value if parsing fails
         if let Ok(parsed_type) = return_type.parse::<TokenStream2>() {
-            quote! { Result<#parsed_type, document::EvalError> }
+            quote! { Result<#parsed_type, dioxus::document::EvalError> }
         } else {
-            quote! { Result<serde_json::Value, document::EvalError> }
+            quote! { Result<serde_json::Value, dioxus::document::EvalError> }
         }
     } else {
         // Default case: no return type information available
-        quote! { Result<serde_json::Value, document::EvalError> }
+        quote! { Result<serde_json::Value, dioxus::document::EvalError> }
     };
 
     // Generate documentation comment if available - preserve original JSDoc format
@@ -593,7 +593,7 @@ return {js_func_name}({params_list});
         pub async fn #func_name(#(#param_types),*) -> #return_type_tokens {
             const MODULE: Asset = asset!(#asset_path);
             let js = format!(#js_format, MODULE);
-            let eval = document::eval(js.as_str());
+            let eval = dioxus::document::eval(js.as_str());
             #(#send_calls)*
             eval.await
         }
