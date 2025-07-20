@@ -2,6 +2,8 @@
 
 pub use dioxus_use_js_macro::*;
 
+//************************************************************************//
+
 pub trait EvalResultExt {
     fn deserialize<T: serde::de::DeserializeOwned>(
         self
@@ -35,3 +37,9 @@ impl std::fmt::Display for JsError {
 }
 
 impl std::error::Error for JsError {}
+
+//************************************************************************//
+
+// Note: No `Clone` on purpose since the value is destroyed when dropped
+#[derive(serde::Serialize, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct JsValue(pub(crate) String);

@@ -4,11 +4,11 @@ use proc_macro::TokenStream;
 use proc_macro2::TokenStream as TokenStream2;
 use quote::{format_ident, quote};
 use std::{fs, path::Path};
-use swc_common::Spanned;
 use swc_common::comments::{CommentKind, Comments};
 use swc_common::{SourceMap, Span, comments::SingleThreadedComments};
+use swc_common::{SourceMapper, Spanned};
 use swc_ecma_ast::{
-    Decl, ExportDecl, ExportSpecifier, FnDecl, ModuleExportName, NamedExport, Param, Pat,
+    Decl, ExportDecl, ExportSpecifier, FnDecl, ModuleExportName, NamedExport, Param, Pat, TsType,
     VarDeclarator,
 };
 use swc_ecma_parser::EsSyntax;
@@ -19,6 +19,9 @@ use syn::{
     parse::{Parse, ParseStream},
     parse_macro_input,
 };
+
+const JSVALUE_JS: &str = "JsValue";
+const JSVALUE_RUST: &str = "dioxus_use_js::JsValue";
 
 #[derive(Debug, Clone)]
 enum ImportSpec {
@@ -76,11 +79,18 @@ impl Parse for UseJsInput {
 }
 
 #[derive(Debug, Clone)]
+struct ParamInfo {
+    name: String,
+    rust_type: Option<String>,
+}
+
+#[derive(Debug, Clone)]
 struct FunctionInfo {
     name: String,
     /// If specified in the use declaration
     name_ident: Option<Ident>,
-    params: Vec<String>,
+    params: Vec<ParamInfo>,
+    return_type: Option<String>,
     is_exported: bool,
     /// The stripped lines
     doc_comment: Vec<String>,
@@ -89,13 +99,15 @@ struct FunctionInfo {
 struct FunctionVisitor {
     functions: Vec<FunctionInfo>,
     comments: SingleThreadedComments,
+    source_map: SourceMap,
 }
 
 impl FunctionVisitor {
-    fn new(comments: SingleThreadedComments) -> Self {
+    fn new(comments: SingleThreadedComments, source_map: SourceMap) -> Self {
         Self {
             functions: Vec::new(),
             comments,
+            source_map,
         }
     }
 
@@ -134,29 +146,127 @@ impl FunctionVisitor {
     }
 }
 
-fn function_params_to_names(params: &[Param]) -> Vec<String> {
+fn ts_type_to_rust_type(ts_type: &str) -> Option<String> {
+    if ts_type == JSVALUE_JS {
+        return Some(JSVALUE_RUST.to_string());
+    }
+    ts_type_to_rust_type_helper(ts_type)
+}
+
+/// Simple converter, needs null in the second position to enable Option, handles regular ts types. 
+/// Does not handle all edge cases
+fn ts_type_to_rust_type_helper(mut ts_type: &str) -> Option<String> {
+    ts_type = ts_type.trim();
+    while ts_type.starts_with("(") && ts_type.ends_with(")") {
+        ts_type = &ts_type[1..ts_type.len() - 1].trim();
+    }
+
+    if ts_type.ends_with("null") {
+        ts_type = ts_type.strip_suffix("null").unwrap();
+        ts_type = ts_type.trim_end();
+        if ts_type.ends_with("|") {
+            ts_type = ts_type.strip_suffix('|').unwrap();
+            ts_type = ts_type.trim_end();
+        }
+        let inner = ts_type_to_rust_type_helper(ts_type)?;
+        return Some(format!("Option<{}>", inner));
+    }
+
+    if ts_type.ends_with("[]") {
+        ts_type = ts_type.strip_suffix("[]").unwrap();
+        let inner = ts_type_to_rust_type_helper(ts_type)?;
+        return Some(format!("Vec<{}>", inner));
+    }
+
+    if ts_type.starts_with("Array<") && ts_type.ends_with(">") {
+        let inner = &ts_type[6..ts_type.len() - 1];
+        let inner_rust = ts_type_to_rust_type_helper(inner)?;
+        return Some(format!("Vec<{}>", inner_rust));
+    }
+
+    if ts_type.starts_with("Set<") && ts_type.ends_with(">") {
+        let inner = &ts_type[4..ts_type.len() - 1];
+        let inner_rust = ts_type_to_rust_type_helper(inner)?;
+        return Some(format!("HashSet<{}>", inner_rust));
+    }
+
+    if ts_type.starts_with("Map<") && ts_type.ends_with(">") {
+        let inner = &ts_type[4..ts_type.len() - 1];
+        let params: Vec<&str> = inner.split(',').collect();
+        if params.len() != 2 {
+            return None;
+        }
+        let key_type = ts_type_to_rust_type_helper(params[0])?;
+        let value_type = ts_type_to_rust_type_helper(params[1])?;
+        return Some(format!("HashMap<{}, {}>", key_type, value_type));
+    }
+
+    let rust_type = match ts_type {
+        "string" => "String",
+        "number" => "f64",
+        "boolean" => "bool",
+        "any" => "serde_json::Value",
+        "unknown" => "serde_json::Value",
+        "object" => "serde_json::Value",
+        _ => {
+            return None;
+        }
+    };
+
+    Some(rust_type.to_owned())
+}
+
+fn type_to_string(ty: &Box<TsType>, source_map: &SourceMap) -> String {
+    let span = ty.span();
+    source_map
+        .span_to_snippet(span)
+        .expect("Could not get snippet from span for type")
+}
+
+fn function_params_to_param_info(params: &[Param], source_map: &SourceMap) -> Vec<ParamInfo> {
     params
         .iter()
         .enumerate()
         .map(|(i, param)| {
-            if let Some(ident) = param.pat.as_ident() {
+            let name = if let Some(ident) = param.pat.as_ident() {
                 ident.id.sym.to_string()
             } else {
                 format!("arg{}", i)
-            }
+            };
+
+            let rust_type = param
+                .pat
+                .as_ident()
+                .and_then(|ident| ident.type_ann.as_ref())
+                .and_then(|type_ann| {
+                    let ty = &type_ann.type_ann;
+                    ts_type_to_rust_type(&type_to_string(ty, source_map))
+                });
+
+            ParamInfo { name, rust_type }
         })
         .collect()
 }
 
-fn function_pat_to_names(pats: &[Pat]) -> Vec<String> {
+fn function_pat_to_param_info(pats: &[Pat], source_map: &SourceMap) -> Vec<ParamInfo> {
     pats.iter()
         .enumerate()
         .map(|(i, pat)| {
-            if let Some(ident) = pat.as_ident() {
+            let name = if let Some(ident) = pat.as_ident() {
                 ident.id.sym.to_string()
             } else {
                 format!("arg{}", i)
-            }
+            };
+
+            let rust_type = pat
+                .as_ident()
+                .and_then(|ident| ident.type_ann.as_ref())
+                .and_then(|type_ann| {
+                    let ty = &type_ann.type_ann;
+                    ts_type_to_rust_type(&type_to_string(ty, source_map))
+                });
+
+            ParamInfo { name, rust_type }
         })
         .collect()
 }
@@ -166,10 +276,18 @@ impl Visit for FunctionVisitor {
     fn visit_fn_decl(&mut self, node: &FnDecl) {
         let doc_comment = self.extract_doc_comment(node.span());
 
+        let params = function_params_to_param_info(&node.function.params, &self.source_map);
+
+        let return_type = node.function.return_type.as_ref().and_then(|type_ann| {
+            let ty = &type_ann.type_ann;
+            ts_type_to_rust_type(&type_to_string(ty, &self.source_map))
+        });
+
         self.functions.push(FunctionInfo {
             name: node.ident.sym.to_string(),
             name_ident: None,
-            params: function_params_to_names(&node.function.params),
+            params,
+            return_type,
             is_exported: false,
             doc_comment,
         });
@@ -184,19 +302,39 @@ impl Visit for FunctionVisitor {
 
                 match &**init {
                     swc_ecma_ast::Expr::Fn(fn_expr) => {
+                        let params = function_params_to_param_info(
+                            &fn_expr.function.params,
+                            &self.source_map,
+                        );
+
+                        let return_type =
+                            fn_expr.function.return_type.as_ref().and_then(|type_ann| {
+                                let ty = &type_ann.type_ann;
+                                ts_type_to_rust_type(&type_to_string(ty, &self.source_map))
+                            });
+
                         self.functions.push(FunctionInfo {
                             name: ident.id.sym.to_string(),
                             name_ident: None,
-                            params: function_params_to_names(&fn_expr.function.params),
+                            params,
+                            return_type,
                             is_exported: false,
                             doc_comment,
                         });
                     }
                     swc_ecma_ast::Expr::Arrow(arrow_fn) => {
+                        let params = function_pat_to_param_info(&arrow_fn.params, &self.source_map);
+
+                        let return_type = arrow_fn.return_type.as_ref().and_then(|type_ann| {
+                            let ty = &type_ann.type_ann;
+                            ts_type_to_rust_type(&type_to_string(ty, &self.source_map))
+                        });
+
                         self.functions.push(FunctionInfo {
                             name: ident.id.sym.to_string(),
                             name_ident: None,
-                            params: function_pat_to_names(&arrow_fn.params),
+                            params,
+                            return_type,
                             is_exported: false,
                             doc_comment,
                         });
@@ -213,10 +351,18 @@ impl Visit for FunctionVisitor {
         if let Decl::Fn(fn_decl) = &node.decl {
             let doc_comment = self.extract_doc_comment(node.span());
 
+            let params = function_params_to_param_info(&fn_decl.function.params, &self.source_map);
+
+            let return_type = fn_decl.function.return_type.as_ref().and_then(|type_ann| {
+                let ty = &type_ann.type_ann;
+                ts_type_to_rust_type(&type_to_string(ty, &self.source_map))
+            });
+
             self.functions.push(FunctionInfo {
                 name: fn_decl.ident.sym.to_string(),
                 name_ident: None,
-                params: function_params_to_names(&fn_decl.function.params),
+                params,
+                return_type,
                 is_exported: true,
                 doc_comment,
             });
@@ -246,22 +392,43 @@ fn parse_js_file(file_path: &Path) -> Result<Vec<FunctionInfo>> {
     let js_content = fs::read_to_string(file_path).map_err(|e| {
         syn::Error::new(
             proc_macro2::Span::call_site(),
-            format!(
-                "Could not read JavaScript file '{}': {}",
-                file_path.display(),
-                e
-            ),
+            format!("Could not read file '{}': {}", file_path.display(), e),
         )
     })?;
 
-    let cm = SourceMap::default();
-    let fm = cm.new_source_file(
+    let source_map = SourceMap::default();
+    let fm = source_map.new_source_file(
         swc_common::FileName::Custom(file_path.display().to_string()).into(),
         js_content.clone(),
     );
     let comments = SingleThreadedComments::default();
+
+    // Enable TypeScript parsing to handle type annotations
+    let syntax = if file_path.extension().and_then(|s| s.to_str()) == Some("ts") {
+        Syntax::Typescript(swc_ecma_parser::TsSyntax {
+            tsx: false,
+            decorators: false,
+            dts: false,
+            no_early_errors: false,
+            disallow_ambiguous_jsx_like: true,
+        })
+    } else {
+        Syntax::Es(EsSyntax {
+            jsx: false,
+            fn_bind: false,
+            decorators: false,
+            decorators_before_export: false,
+            export_default_from: false,
+            import_attributes: false,
+            allow_super_outside_method: false,
+            allow_return_outside_function: false,
+            auto_accessors: false,
+            explicit_resource_management: false,
+        })
+    };
+
     let lexer = Lexer::new(
-        Syntax::Es(EsSyntax::default()),
+        syntax,
         Default::default(),
         StringInput::from(&*fm),
         Some(&comments),
@@ -280,7 +447,7 @@ fn parse_js_file(file_path: &Path) -> Result<Vec<FunctionInfo>> {
         )
     })?;
 
-    let mut visitor = FunctionVisitor::new(comments);
+    let mut visitor = FunctionVisitor::new(comments, source_map);
     module.visit_with(&mut visitor);
 
     // Functions are added twice for some reason
@@ -340,19 +507,24 @@ fn generate_function_wrapper(func: &FunctionInfo, asset_path: &LitStr) -> TokenS
         .params
         .iter()
         .map(|param| {
-            let param = format_ident!("{}", param);
+            let param_name = format_ident!("{}", param.name);
             quote! {
-                eval.send(#param)?;
+                eval.send(#param_name)?;
             }
         })
         .collect();
 
     let js_func_name = &func.name;
-    let params_list = func.params.join(", ");
+    let params_list = func
+        .params
+        .iter()
+        .map(|p| p.name.as_str())
+        .collect::<Vec<&str>>()
+        .join(", ");
     let recv_lines = func
         .params
         .iter()
-        .map(|param| format!("let {param} = await dioxus.recv();"))
+        .map(|param| format!("let {} = await dioxus.recv();", param.name))
         .collect::<Vec<_>>()
         .join("\n");
 
@@ -364,14 +536,38 @@ return {js_func_name}({params_list});
 "#
     );
 
+    // Generate parameter types with extracted type information
     let param_types: Vec<_> = func
         .params
         .iter()
         .map(|param| {
-            let param = format_ident!("{}", param);
-            quote! { #param: impl serde::Serialize }
+            let param_name = format_ident!("{}", param.name);
+            if let Some(rust_type) = &param.rust_type {
+                // Try to parse the type, but fall back to impl serde::Serialize if parsing fails
+                if let Ok(type_tokens) = rust_type.parse::<TokenStream2>() {
+                    quote! { #param_name: &#type_tokens }
+                } else {
+                    quote! { #param_name: impl serde::Serialize }
+                }
+            } else {
+                // Default case: no type information available
+                quote! { #param_name: impl serde::Serialize }
+            }
         })
         .collect();
+
+    // Generate return type
+    let return_type_tokens = if let Some(return_type) = &func.return_type {
+        // Try to parse the return type, but fall back to serde_json::Value if parsing fails
+        if let Ok(parsed_type) = return_type.parse::<TokenStream2>() {
+            quote! { Result<#parsed_type, document::EvalError> }
+        } else {
+            quote! { Result<serde_json::Value, document::EvalError> }
+        }
+    } else {
+        // Default case: no return type information available
+        quote! { Result<serde_json::Value, document::EvalError> }
+    };
 
     // Generate documentation comment if available - preserve original JSDoc format
     let doc_comment = if func.doc_comment.is_empty() {
@@ -390,10 +586,11 @@ return {js_func_name}({params_list});
         .clone()
         // Can not exist if `::*`
         .unwrap_or_else(|| Ident::new(func.name.as_str(), proc_macro2::Span::call_site()));
+
     quote! {
         #doc_comment
         #[allow(non_snake_case)]
-        pub async fn #func_name(#(#param_types),*) -> Result<serde_json::Value, document::EvalError> {
+        pub async fn #func_name(#(#param_types),*) -> #return_type_tokens {
             const MODULE: Asset = asset!(#asset_path);
             let js = format!(#js_format, MODULE);
             let eval = document::eval(js.as_str());
@@ -403,7 +600,7 @@ return {js_func_name}({params_list});
     }
 }
 
-/// A macro to create rust binding to javascript functions.
+/// A macro to create rust binding to javascript and typescript functions.
 ///```rust,no_run
 /// use dioxus::prelude::*;
 /// use dioxus_use_js::use_js;
@@ -497,4 +694,149 @@ pub fn use_js(input: TokenStream) -> TokenStream {
     };
 
     TokenStream::from(expanded)
+}
+
+//************************************************************************//
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_primitives() {
+        assert_eq!(ts_type_to_rust_type("string"), Some("String".to_owned()));
+        assert_eq!(ts_type_to_rust_type("number"), Some("f64".to_owned()));
+        assert_eq!(ts_type_to_rust_type("boolean"), Some("bool".to_owned()));
+        assert_eq!(
+            ts_type_to_rust_type("object"),
+            Some("serde_json::Value".to_owned())
+        );
+    }
+
+    #[test]
+    fn test_nullable_primitives() {
+        assert_eq!(
+            ts_type_to_rust_type("string | null"),
+            Some("Option<String>".to_owned())
+        );
+        assert_eq!(
+            ts_type_to_rust_type("number | null"),
+            Some("Option<f64>".to_owned())
+        );
+        assert_eq!(
+            ts_type_to_rust_type("boolean | null"),
+            Some("Option<bool>".to_owned())
+        );
+    }
+
+    #[test]
+    fn test_arrays() {
+        assert_eq!(
+            ts_type_to_rust_type("string[]"),
+            Some("Vec<String>".to_owned())
+        );
+        assert_eq!(
+            ts_type_to_rust_type("Array<number>"),
+            Some("Vec<f64>".to_owned())
+        );
+    }
+
+    #[test]
+    fn test_nullable_array_elements() {
+        assert_eq!(
+            ts_type_to_rust_type("(string | null)[]"),
+            Some("Vec<Option<String>>".to_owned())
+        );
+        assert_eq!(
+            ts_type_to_rust_type("Array<number | null>"),
+            Some("Vec<Option<f64>>".to_owned())
+        );
+    }
+
+    #[test]
+    fn test_nullable_array_itself() {
+        assert_eq!(
+            ts_type_to_rust_type("string[] | null"),
+            Some("Option<Vec<String>>".to_owned())
+        );
+        assert_eq!(
+            ts_type_to_rust_type("Array<number> | null"),
+            Some("Option<Vec<f64>>".to_owned())
+        );
+    }
+
+    #[test]
+    fn test_nullable_array_and_elements() {
+        assert_eq!(
+            ts_type_to_rust_type("Array<string | null> | null"),
+            Some("Option<Vec<Option<String>>>".to_owned())
+        );
+    }
+
+    #[test]
+    fn test_fallback_for_union() {
+        assert_eq!(ts_type_to_rust_type("string | number"), None);
+        assert_eq!(ts_type_to_rust_type("string | number | null"), None);
+    }
+
+    #[test]
+    fn test_unknown_types() {
+        assert_eq!(ts_type_to_rust_type("foo"), None);
+        assert_eq!(
+            ts_type_to_rust_type("any"),
+            Some("serde_json::Value".to_owned())
+        );
+        assert_eq!(
+            ts_type_to_rust_type("object"),
+            Some("serde_json::Value".to_owned())
+        );
+        assert_eq!(
+            ts_type_to_rust_type("unknown"),
+            Some("serde_json::Value".to_owned())
+        );
+    }
+
+    #[test]
+    fn test_extra_whitespace() {
+        assert_eq!(
+            ts_type_to_rust_type("  string | null  "),
+            Some("Option<String>".to_owned())
+        );
+        assert_eq!(
+            ts_type_to_rust_type(" Array< string > "),
+            Some("Vec<String>".to_owned())
+        );
+    }
+
+    #[test]
+    fn test_map_types() {
+        assert_eq!(
+            ts_type_to_rust_type("Map<string, number>"),
+            Some("HashMap<String, f64>".to_string())
+        );
+        assert_eq!(
+            ts_type_to_rust_type("Map<string, boolean>"),
+            Some("HashMap<String, bool>".to_string())
+        );
+        assert_eq!(
+            ts_type_to_rust_type("Map<number, string>"),
+            Some("HashMap<f64, String>".to_string())
+        );
+    }
+
+    #[test]
+    fn test_set_types() {
+        assert_eq!(
+            ts_type_to_rust_type("Set<string>"),
+            Some("HashSet<String>".to_string())
+        );
+        assert_eq!(
+            ts_type_to_rust_type("Set<number>"),
+            Some("HashSet<f64>".to_string())
+        );
+        assert_eq!(
+            ts_type_to_rust_type("Set<boolean>"),
+            Some("HashSet<bool>".to_string())
+        );
+    }
 }
