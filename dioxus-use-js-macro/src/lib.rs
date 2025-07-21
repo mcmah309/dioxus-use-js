@@ -761,7 +761,7 @@ const {{{{ {js_func_name} }}}} = await import("{{}}");
     } else {
         quote! {
             .map_err(dioxus_use_js::JsError::Eval)
-            .and_then(|v| dioxus_use_js::serde_json_from_value(v).map_err(dioxus_use_js::JsError::Deserialize))
+            .and_then(|v| dioxus_use_js::serde_json_from_value(v).map_err(|e| dioxus_use_js::JsError::Eval(dioxus::document::EvalError::Serialization(e))))
         }
     };
 

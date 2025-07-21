@@ -1,11 +1,10 @@
 #![doc = include_str!("../README.md")]
 
-use std::{fmt::Display, sync::Arc};
+use std::{error::Error, fmt::Display, sync::Arc};
 
 pub use dioxus_use_js_macro::use_js;
 
 // We export these so downstreams don't need `serde` or `serde_json` directly
-pub use serde_json::Error as SerdeJsonError;
 // exports used by macro.
 pub use serde::Serialize as SerdeSerialize;
 pub use serde_json::Value as SerdeJsonValue;
@@ -26,14 +25,14 @@ pub use serde_json::from_value as serde_json_from_value;
 #[derive(Debug)]
 pub enum JsError {
     Eval(dioxus::document::EvalError),
-    Deserialize(SerdeJsonError),
+    Callback(Box<dyn Error>),
 }
 
 impl std::fmt::Display for JsError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             JsError::Eval(e) => write!(f, "JavaScript evaluation error: {}", e),
-            JsError::Deserialize(e) => write!(f, "Deserialization output error: {}", e),
+            JsError::Callback(error) => write!(f, "Callback error: {}", error),
         }
     }
 }
