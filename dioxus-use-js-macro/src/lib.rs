@@ -47,8 +47,8 @@ impl Parse for UseJsInput {
         let first_str: LitStr = input.parse()?;
 
         // Check if => follows (i.e., we have "src.ts" => "bundle.js")
-        let (ts_source_path, js_bundle_path) = if input.peek(Token![=>]) {
-            input.parse::<Token![=>]>()?;
+        let (ts_source_path, js_bundle_path) = if input.peek(Token![,]) {
+            input.parse::<Token![,]>()?;
             let second_str: LitStr = input.parse()?;
             (Some(first_str), second_str)
         } else {

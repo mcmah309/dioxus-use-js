@@ -61,11 +61,7 @@ bun build example.ts --outfile example.js
 Bind with:
 
 ```rust
-use_js! {
-    ts: "src/example.ts",
-    bundle: "assets/example.js",
-    functions: {greeting}
-}
+use_js!("src/example.ts", "assets/example.js"::{greeting});
 ```
 
 **Generated Rust signature**:
@@ -89,11 +85,9 @@ use_js!("bundle.js"::*);
 ### Ts
 
 ```rust
-use_js! {
-    ts: "src/file.ts",
-    bundle: "assets/file.js",
-    functions: {name1, name2}
-}
+use_js!("source.ts", "bundle.js"::function);
+use_js!("source.ts", "bundle.js"::{func1, func2});
+use_js!("source.ts", "bundle.js"::*);
 ```
 
 ---
