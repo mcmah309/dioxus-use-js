@@ -1,6 +1,6 @@
 /// This is a reserved marker type that tells the `use_js!` macro to not do serialization and
 /// deserialization, but instead create a shim and return an opaque proxy object that can be used to
-/// reference the internal js object, so it can be passed around on the rust side.
+/// reference the internal js object, so it can be passed around on the rust side. 
 type JsValue<T = any> = T;
 
 /** 
