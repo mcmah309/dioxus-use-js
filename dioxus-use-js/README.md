@@ -146,7 +146,7 @@ export function useJsObject(value: JsValue<MyObject>): number {
 **Generated Rust signature**:
 
 ```rust
-pub async fn createJsObject() -> Result<Value, JsError>;
+pub async fn createJsObject() -> Result<JsValue, JsError>;
 
-pub async fn useJsObject(value: JsValue) -> Result<f64, dJsError>;
+pub async fn useJsObject(value: &JsValue) -> Result<f64, dJsError>;
 ```
