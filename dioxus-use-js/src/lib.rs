@@ -44,8 +44,23 @@ impl std::error::Error for JsError {}
 
 /// A reference to a javascript value that can be held on the dioxus side and passed to functions generated
 /// by this crate.
+/// 
+/// An instance of this is created or used by e.g.
+/// ```rust,ignore
+/// dioxus_use_js::use_js! {
+///     ts: "ts/example.ts",
+///     bundle: "assets/example.js",
+///     functions: usingJsValue,
+/// }
+/// ```
+/// Where `"ts/example.ts"` uses this marker type
+/// ```ts
+/// type JsValue<T = any> = T;
+/// ```
+/// And `usingJsValue` uses `JsValue`.
+/// 
 /// This uses `Arc` internally and the value on the js side is destroyed when the last reference is dropped
-// Note: No `serde::Serialize` or `serde::Deserialize` on purpose since the value is destroyed when dropped
+// Dev Note: No `serde::Serialize` or `serde::Deserialize` on purpose since the value is destroyed when dropped
 #[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct JsValue(Arc<Inner>);
 
