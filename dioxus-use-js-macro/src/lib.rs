@@ -42,92 +42,48 @@ struct UseJsInput {
     import_spec: ImportSpec,
 }
 
-/// Reusable parsing for `ImportSpec`
-fn parse_import_spec(input: ParseStream) -> Result<ImportSpec> {
-    if input.peek(Token![*]) {
-        input.parse::<Token![*]>()?;
-        Ok(ImportSpec::All)
-    } else if input.peek(syn::token::Brace) {
-        let content;
-        syn::braced!(content in input);
-        let mut functions = Vec::new();
-        while !content.is_empty() {
-            let ident: Ident = content.parse()?;
-            functions.push(ident);
-            if content.peek(Token![,]) {
-                content.parse::<Token![,]>()?;
-            }
-        }
-        Ok(ImportSpec::Named(functions))
-    } else {
-        let ident: Ident = input.parse()?;
-        Ok(ImportSpec::Single(ident))
-    }
-}
-
 impl Parse for UseJsInput {
     fn parse(input: ParseStream) -> Result<Self> {
-        if input.peek(LitStr) {
-            // shorthand: "bundle_path"::import_spec
-            let js_bundle_path: LitStr = input.parse()?;
-            input.parse::<Token![::]>()?;
-            let import_spec = parse_import_spec(input)?;
+        let first_str: LitStr = input.parse()?;
 
-            Ok(UseJsInput {
-                js_bundle_path,
-                ts_source_path: None,
-                import_spec,
-            })
-        } else if input.peek(Ident) {
-            // full syntax: ts: "...", bundle: "...", functions: ...
-            let mut ts_source_path = None;
-            let mut js_bundle_path = None;
-            let mut import_spec = None;
-
-            while !input.is_empty() {
-                let key: Ident = input.parse()?;
-                input.parse::<Token![:]>()?;
-
-                match key.to_string().as_str() {
-                    "ts" => {
-                        ts_source_path = Some(input.parse::<LitStr>()?);
-                    }
-                    "bundle" => {
-                        js_bundle_path = Some(input.parse::<LitStr>()?);
-                    }
-                    "functions" => {
-                        import_spec = Some(parse_import_spec(input)?);
-                    }
-                    _ => {
-                        return Err(syn::Error::new_spanned(
-                            key,
-                            "Expected one of: ts, bundle, functions",
-                        ));
-                    }
-                }
-
-                if input.peek(Token![,]) {
-                    input.parse::<Token![,]>()?;
-                }
-            }
-
-            Ok(UseJsInput {
-                js_bundle_path: js_bundle_path.ok_or_else(|| {
-                    syn::Error::new(proc_macro2::Span::call_site(), "`bundle` is required")
-                })?,
-                ts_source_path: Some(ts_source_path.ok_or_else(|| {
-                    syn::Error::new(proc_macro2::Span::call_site(), "`ts` is required")
-                })?),
-                import_spec: import_spec.ok_or_else(|| {
-                    syn::Error::new(proc_macro2::Span::call_site(), "`functions` is required")
-                })?,
-            })
+        // Check if => follows (i.e., we have "src.ts" => "bundle.js")
+        let (ts_source_path, js_bundle_path) = if input.peek(Token![=>]) {
+            input.parse::<Token![=>]>()?;
+            let second_str: LitStr = input.parse()?;
+            (Some(first_str), second_str)
         } else {
-            Err(syn::Error::new(
-                input.span(),
-                "Expected string literal or braced block",
-            ))
-        }
+            (None, first_str)
+        };
+
+        // Check for optional :: following bundle path
+        let import_spec = if input.peek(Token![::]) {
+            input.parse::<Token![::]>()?;
+
+            if input.peek(Token![*]) {
+                input.parse::<Token![*]>()?;
+                ImportSpec::All
+            } else if input.peek(Ident) {
+                let ident: Ident = input.parse()?;
+                ImportSpec::Single(ident)
+            } else if input.peek(syn::token::Brace) {
+                let content;
+                syn::braced!(content in input);
+                let idents: syn::punctuated::Punctuated<Ident, Token![,]> =
+                    content.parse_terminated(Ident::parse, Token![,])?;
+                ImportSpec::Named(idents.into_iter().collect())
+            } else {
+                return Err(input.error("Expected `*`, an identifier, or a brace group after `::`"));
+            }
+        } else {
+            return Err(input
+                .error("Expected `::` followed by an import spec (even for wildcard with `*`)"));
+        };
+
+        Ok(UseJsInput {
+            js_bundle_path,
+            ts_source_path,
+            import_spec,
+        })
     }
 }
 
@@ -228,7 +184,7 @@ fn ts_type_to_rust_type(ts_type: Option<&str>, is_input: bool) -> String {
             } else {
                 value
             }
-        }
+        },
         None => (if is_input { SERDE_INPUT } else { SERDE_OUTPUT }).to_owned(),
     }
 }
@@ -302,7 +258,10 @@ fn ts_type_to_rust_type_helper(mut ts_type: &str, is_input: bool, is_root: bool)
             let value = &value[1..]; // skip comma
             let key_rust = ts_type_to_rust_type_helper(key.trim(), is_input, false)?;
             let value_rust = ts_type_to_rust_type_helper(value.trim(), is_input, false)?;
-            return Some(format!("std::collections::HashMap<{}, {}>", key_rust, value_rust));
+            return Some(format!(
+                "std::collections::HashMap<{}, {}>",
+                key_rust, value_rust
+            ));
         } else {
             return None;
         }
