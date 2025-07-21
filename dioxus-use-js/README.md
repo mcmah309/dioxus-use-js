@@ -105,6 +105,7 @@ use_js!("source.ts", "bundle.js"::*);
 | `Set<T>`              | `&HashSet<T>`    | `HashSet<T>`    |
 | `any`, `unknown`, no type, invalid type      | `impl serde::Serialize` | `serde_json::Value`|
 | `JsValue<T>`             | `&JsValue`       | `JsValue`         |
+| `RustCallback<T,TT>`     | `impl AsyncFnMut(T) -> Result<TT, Box<dyn Error>>` | `-`|
 
 ---
 
