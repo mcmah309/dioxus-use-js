@@ -116,7 +116,7 @@ use_js! {
 
 ## `JsValue`
 
-Use `JsValue` in TS to **bypass serialization** and pass native JS values as opaque references between Rust and JavaScript.
+Use `JsValue` in TS to **bypass serialization** and pass native JS values as opaque references between Rust and JavaScript. The JS value is automatically disposed when all references on the Rust side go out of scope.
 
 ### Example (TypeScript)
 
@@ -148,5 +148,5 @@ export function useJsObject(value: JsValue<MyObject>): number {
 ```rust
 pub async fn createJsObject() -> Result<JsValue, JsError>;
 
-pub async fn useJsObject(value: &JsValue) -> Result<f64, dJsError>;
+pub async fn useJsObject(value: &JsValue) -> Result<f64, JsError>;
 ```
