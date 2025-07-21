@@ -112,8 +112,6 @@ use_js! {
 | `any`, `unknown`, no type, invalid type      | `impl serde::Serialize` | `serde_json::Value`|
 | `JsValue<T>`             | `&JsValue`       | `JsValue`         |
 
-Where `T` is a value in the current column recursively.
-
 ---
 
 ## `JsValue`
