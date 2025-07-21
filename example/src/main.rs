@@ -16,7 +16,7 @@ use_js! {
 // use_js!("assets/example.js"::greeting);
 
 // Generate multiple functions:
-// use_js!("assets/example.js"::{greeting, createJsObjectWithFunction, useObjectsFunction});
+// use_js!("assets/example.js"::{greeting});
 
 // Generate all exported functions:
 // use_js!("assets/example.js"::*);
