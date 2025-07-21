@@ -802,7 +802,7 @@ const {{{{ {js_func_name} }}}} = await import("{{}}");
     } else {
         quote! {
             .map_err(dioxus_use_js::JsError::Eval)
-            .and_then(|v| serde_json::from_value(v).map_err(dioxus_use_js::JsError::Deserialize))
+            .and_then(|v| dioxus_use_js::serde_json_from_value(v).map_err(dioxus_use_js::JsError::Deserialize))
         }
     };
 
@@ -828,7 +828,7 @@ const {{{{ {js_func_name} }}}} = await import("{{}}");
         pub async fn #func_name(#(#param_types),*) -> #return_type_tokens {
             const MODULE: Asset = asset!(#asset_path);
             let js = format!(#js_format, MODULE);
-            let eval = dioxus_use_js::dioxus_document_eval(js.as_str());
+            let eval = dioxus::document::eval(js.as_str());
             #(#send_calls)*
             #return_value
         }

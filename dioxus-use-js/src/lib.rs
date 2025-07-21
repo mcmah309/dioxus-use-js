@@ -3,13 +3,20 @@
 use std::{fmt::Display, sync::Arc};
 
 pub use dioxus_use_js_macro::use_js;
-pub use dioxus::document::EvalError as DioxusEvalError;
-pub use serde_json::Error as SerdeJsonError;
 
-// exports used by macro
+// We export these so downstreams don't need `serde` or `serde_json` directly
+pub use serde_json::Error as SerdeJsonError;
+// exports used by macro.
 pub use serde::Serialize as SerdeSerialize;
 pub use serde_json::Value as SerdeJsonValue;
-pub use dioxus::document::eval as dioxus_document_eval;
+
+#[doc(hidden)]
+pub use serde_json::from_value as serde_json_from_value;
+
+// We do not export this so the dioxus version doing the eval is the same, otherwise it may compile but using two different versions of dioxus at runtime will likely cause a runtime error
+// be two different versions of dioxus in the graph
+// pub use dioxus::document::eval as dioxus_document_eval;
+// pub use dioxus::document::EvalError as DioxusEvalError;
 
 
 
@@ -18,7 +25,7 @@ pub use dioxus::document::eval as dioxus_document_eval;
 /// An error related to the execution of a javascript operation
 #[derive(Debug)]
 pub enum JsError {
-    Eval(DioxusEvalError),
+    Eval(dioxus::document::EvalError),
     Deserialize(SerdeJsonError),
 }
 
