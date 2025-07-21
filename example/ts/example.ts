@@ -3,6 +3,12 @@
 /// reference the internal js object, so it can be passed around on the rust side. 
 type JsValue<T = any> = T;
 
+// input of void means takes no arguments
+// output of void means it returns no arguments
+type RustCallback<A = any, R = any> = (arg: A) => Promise<R>;
+
+
+
 /** 
  * Creates a greeting
 */
@@ -26,7 +32,17 @@ export function createJsObject(): JsValue<MyObject> {
 }
 
 /// Uses a js value
-export function useJsObject(value: JsValue<MyObject>): number {
-    let result = value.method(2);
+export function useJsObject(input: number, value: JsValue<MyObject>): number {
+    let result = value.method(input);
     return result;
+}
+
+export async function useCallback(startingValue: number ,callback: RustCallback<number,number>): Promise<number> {
+    let doubledValue = startingValue * 2;
+    let quadrupledValue = await callback(doubledValue);
+    if (quadrupledValue != doubledValue * 2) {
+        throw new Error("Callback did not double value");
+    }
+    let finalValue = quadrupledValue * 2;
+    return finalValue;
 }

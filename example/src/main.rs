@@ -1,11 +1,11 @@
 use dioxus::{logger::tracing::Level, prelude::*};
 use dioxus_use_js::{use_js, JsError};
 
-// Use typescript to generate the following functions at compile time 
+// Use typescript to generate the following functions at compile time
 // with the correct Rust types determined from the source:
-use_js!("ts/example.ts", "assets/example.js"::{greeting, createJsObject, useJsObject});
+use_js!("ts/example.ts", "assets/example.js"::{greeting, createJsObject, useJsObject, useCallback});
 // Note: Typescript is not needed, as seen in the below commented out examples.
-// But it is required for exact Rust type generation and `JsValue`.
+// But it is required for exact Rust type generation }and `JsValue`.
 
 // Javascript can also be used directly without typescript.
 // Generate a function without the correct Rust types:
@@ -37,9 +37,16 @@ fn App() -> Element {
         // The value is kept on the js side and a reference to it is kept on the rust side.
         // The value is automatically disposed when all rust references no longer exist.
         let js_value = createJsObject().await?;
-        let output = useJsObject(&js_value).await?;
+        let output = useJsObject(&2.0, &js_value).await?;
         // Since `js_value` is dropped here and all references no longer exist,
         // the referenced value will be disposed on the js side.
+        Ok(output)
+    });
+
+    let callback_example: Resource<Result<f64, JsError>> = use_resource(|| async move {
+        // Rust side closure callable from javascript
+        let callback = async |value: f64| Ok(value * 2.0);
+        let output = useCallback(&2.0, callback).await?;
         Ok(output)
     });
 
@@ -63,7 +70,7 @@ fn App() -> Element {
                 }
             }
             p {
-                "JsValue function calling:"
+                "`JsValue` - object method calling:"
                 {
                     match &*js_value_example.read() {
                         Some(Ok(js_value_example)) => rsx! {
@@ -77,7 +84,23 @@ fn App() -> Element {
                         },
                     }
                 }
-                "Check the logs, you should also see something like 'Successfully dropped JsValue and cleaned up JavaScript object'"
+                small { "Check the logs, you should also see something like 'Successfully dropped JsValue and cleaned up JavaScript object'" }
+            }
+        }
+        p {
+            "`RustCallback`:"
+            {
+                match &*callback_example.read() {
+                    Some(Ok(callback_example)) => rsx! {
+                        p { style: "color:green", "{callback_example}" }
+                    },
+                    Some(Err(e)) => rsx! {
+                        p { style: "color:red", "Error: {e}" }
+                    },
+                    None => rsx! {
+                        p { style: "color:blue", "Running js..." }
+                    },
+                }
             }
         }
     )

@@ -16,7 +16,17 @@ export function createJsObject() {
 }
 
 /// Uses a js value
-export function useJsObject(value) {
-    let result = value.method(2);
+export function useJsObject(input, value) {
+    let result = value.method(input);
     return result;
+}
+
+export async function useCallback(startingValue,  callback) {
+    let doubledValue = startingValue * 2;
+    let quadrupledValue = await callback(doubledValue);
+    if (quadrupledValue != doubledValue * 2) {
+        throw new Error("Callback did not double value");
+    }
+    let finalValue = quadrupledValue * 2;
+    return finalValue;
 }
