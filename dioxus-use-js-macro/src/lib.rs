@@ -1008,15 +1008,15 @@ const {{{{ {js_func_name} }}}} = await import("{{}}");
             match value{
                 dioxus_use_js::SerdeJsonValue::Array(values) => {
                     if values.len() != 2 {
-                        unreachable!("Should always send back a value that is an array of two.")
+                        unreachable!("{}", dioxus_use_js::__SEND_VALIDATION_MSG)
                     }
                     let mut iter = values.into_iter();
                     let action_ = match iter.next().unwrap() {
                         dioxus_use_js::SerdeJsonValue::Number(action_) => action_,
-                        _ => unreachable!("The first sent back value should always be a Number."),
+                        _ => unreachable!("{}", dioxus_use_js::__INDEX_VALIDATION_MSG),
                     };
                     let value = iter.next().unwrap();
-                    match action_.as_u64().expect("Should always send back an action as a number.") {
+                    match action_.as_u64().expect(dioxus_use_js::__INDEX_VALIDATION_MSG) {
                         0 => {
                             return dioxus_use_js::serde_json_from_value(value).map_err(|e| {
                                 dioxus_use_js::JsError::Eval(
@@ -1025,10 +1025,10 @@ const {{{{ {js_func_name} }}}} = await import("{{}}");
                             });
                         }
                         #(#callback_arms,)*
-                        _ => unreachable!("Should only attempt to call known actions. Attempted to invoke `{action_}`"),
+                        _ => unreachable!("{}", dioxus_use_js::__BAD_CALL_MSG),
                     }
                 }
-                _ => unreachable!("Should always send back a value that is an array of two."),
+                _ => unreachable!("{}", dioxus_use_js::__SEND_VALIDATION_MSG),
             }
         }
         }
