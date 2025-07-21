@@ -1,5 +1,6 @@
 #![doc = include_str!("../README.md")]
 
+use core::panic;
 use proc_macro::TokenStream;
 use proc_macro2::TokenStream as TokenStream2;
 use quote::{format_ident, quote};
@@ -20,11 +21,16 @@ use syn::{
     parse_macro_input,
 };
 
-const JSVALUE_JS: &str = "JsValue";
-const JSVALUE_OUTPUT: &str = "dioxus_use_js::JsValue";
+/// `JsValue<T>`
+const JSVALUE_JS_START: &str = "JsValue";
 const JSVALUE_INPUT: &str = "&dioxus_use_js::JsValue";
-const SERDE_OUTPUT: &str = "dioxus_use_js::SerdeJsonValue";
+const JSVALUE_OUTPUT: &str = "dioxus_use_js::JsValue";
 const SERDE_INPUT: &str = "impl dioxus_use_js::SerdeSerialize";
+const SERDE_OUTPUT: &str = "dioxus_use_js::SerdeJsonValue";
+/// `RustCallback<T,TT>`
+const RUST_CALLBACK_JS_START: &str = "RustCallback";
+// e.g. `impl AsyncFnMut(serde_json::Value) -> serde_json::Value` or `impl AsyncFnMut() -> ()`
+// const RUST_CALLBACK_INPUT_START: &str = "impl AsyncFnMut";
 
 #[derive(Debug, Clone)]
 enum ImportSpec {
@@ -92,7 +98,7 @@ struct ParamInfo {
     name: String,
     #[allow(unused)]
     js_type: Option<String>,
-    rust_type: String,
+    rust_type: RustType,
 }
 
 #[derive(Debug, Clone)]
@@ -162,15 +168,81 @@ impl FunctionVisitor {
     }
 }
 
-fn ts_type_to_rust_type(ts_type: Option<&str>, is_input: bool) -> String {
+#[derive(Debug, Clone)]
+enum RustType {
+    Regular(String),
+    CallBack(RustCallback),
+}
+
+impl ToString for RustType {
+    fn to_string(&self) -> String {
+        match self {
+            RustType::Regular(ty) => ty.clone(),
+            RustType::CallBack(callback) => {
+                let input = callback.input.as_deref();
+                let output = callback.output.as_deref().unwrap_or("()");
+                format!(
+                    "impl AsyncFnMut({}) -> Result<{}, Box<dyn std::error::Error>>",
+                    input.unwrap_or_default(),
+                    output
+                )
+            }
+        }
+    }
+}
+
+impl RustType {
+    fn to_tokens(&self) -> TokenStream2 {
+        self.to_string()
+            .parse::<TokenStream2>()
+            .expect("Calculated Rust type should always be valid")
+    }
+}
+
+#[derive(Debug, Clone)]
+struct RustCallback {
+    input: Option<String>,
+    output: Option<String>,
+}
+
+fn ts_type_to_rust_type(ts_type: Option<&str>, is_input: bool) -> RustType {
     let Some(ts_type) = ts_type else {
-        return (if is_input { SERDE_INPUT } else { SERDE_OUTPUT }).to_owned();
+        return RustType::Regular((if is_input { SERDE_INPUT } else { SERDE_OUTPUT }).to_owned());
     };
-    if ts_type.starts_with(JSVALUE_JS) {
+    if ts_type.starts_with(JSVALUE_JS_START) {
         if is_input {
-            return JSVALUE_INPUT.to_owned();
+            return RustType::Regular(JSVALUE_INPUT.to_owned());
         } else {
-            return JSVALUE_OUTPUT.to_owned();
+            return RustType::Regular(JSVALUE_OUTPUT.to_owned());
+        }
+    }
+    if ts_type.starts_with(RUST_CALLBACK_JS_START) {
+        assert!(is_input, "Cannot return a Rust callback: {}", ts_type);
+        let ts_type = &ts_type[RUST_CALLBACK_JS_START.len()..];
+        if ts_type.starts_with("<") && ts_type.ends_with(">") {
+            let inner = &ts_type[1..ts_type.len() - 1];
+            let parts = inner.split(",").collect::<Vec<&str>>();
+            let len = parts.len();
+            if len > 2 || len == 0 {
+                panic!("Invalid Rust callback type param: {}", inner);
+            }
+            let input =
+                ts_type_to_rust_type_helper(parts[0].trim(), true, true).map(|e| format!("&{}", e));
+            // `RustCallback<T>` or `RustCallback<T,TT>`
+            let output = if len == 2 {
+                ts_type_to_rust_type_helper(parts[1].trim(), false, true)
+            } else {
+                None
+            };
+            return RustType::CallBack(RustCallback { input, output });
+            // `RustCallback`
+        } else if ts_type.is_empty() {
+            return RustType::CallBack(RustCallback {
+                input: None,
+                output: None,
+            });
+        } else {
+            panic!("Invalid Rust callback type: {}", ts_type);
         }
     }
     match ts_type_to_rust_type_helper(ts_type, is_input, true) {
@@ -180,12 +252,12 @@ fn ts_type_to_rust_type(ts_type: Option<&str>, is_input: bool) -> String {
                     !value.starts_with("&"),
                     "helper function should not return a reference"
                 );
-                format!("&{}", value)
+                RustType::Regular(format!("&{}", value))
             } else {
-                value
+                RustType::Regular(value)
             }
-        },
-        None => (if is_input { SERDE_INPUT } else { SERDE_OUTPUT }).to_owned(),
+        }
+        None => RustType::Regular((if is_input { SERDE_INPUT } else { SERDE_OUTPUT }).to_owned()),
     }
 }
 
@@ -265,6 +337,13 @@ fn ts_type_to_rust_type_helper(mut ts_type: &str, is_input: bool, is_root: bool)
         } else {
             return None;
         }
+    }
+
+    if ts_type.starts_with("Promise<") && ts_type.ends_with(">") {
+        let inner = &ts_type[8..ts_type.len() - 1];
+        assert!(!is_input, "Promise cannot be used as input type");
+        let inner_rust = ts_type_to_rust_type_helper(inner, false, is_root)?;
+        return Some(inner_rust);
     }
 
     // Base types
@@ -402,7 +481,14 @@ impl Visit for FunctionVisitor {
             let ty = &type_ann.type_ann;
             type_to_string(ty, &self.source_map)
         });
-        let rust_return_type = ts_type_to_rust_type(js_return_type.as_deref(), false);
+        let RustType::Regular(rust_return_type) =
+            ts_type_to_rust_type(js_return_type.as_deref(), false)
+        else {
+            panic!(
+                "Cannot return a Rust callback: {}",
+                js_return_type.as_deref().unwrap_or("")
+            )
+        };
 
         self.functions.push(FunctionInfo {
             name: node.ident.sym.to_string(),
@@ -435,8 +521,14 @@ impl Visit for FunctionVisitor {
                                 let ty = &type_ann.type_ann;
                                 type_to_string(ty, &self.source_map)
                             });
-                        let rust_return_type =
-                            ts_type_to_rust_type(js_return_type.as_deref(), false);
+                        let RustType::Regular(rust_return_type) =
+                            ts_type_to_rust_type(js_return_type.as_deref(), false)
+                        else {
+                            panic!(
+                                "Cannot return a Rust callback: {}",
+                                js_return_type.as_deref().unwrap_or("")
+                            )
+                        };
 
                         self.functions.push(FunctionInfo {
                             name: ident.id.sym.to_string(),
@@ -456,8 +548,14 @@ impl Visit for FunctionVisitor {
                             let ty = &type_ann.type_ann;
                             type_to_string(ty, &self.source_map)
                         });
-                        let rust_return_type =
-                            ts_type_to_rust_type(js_return_type.as_deref(), false);
+                        let RustType::Regular(rust_return_type) =
+                            ts_type_to_rust_type(js_return_type.as_deref(), false)
+                        else {
+                            panic!(
+                                "Cannot return a Rust callback: {}",
+                                js_return_type.as_deref().unwrap_or("")
+                            )
+                        };
 
                         self.functions.push(FunctionInfo {
                             name: ident.id.sym.to_string(),
@@ -488,7 +586,14 @@ impl Visit for FunctionVisitor {
                 let ty = &type_ann.type_ann;
                 type_to_string(ty, &self.source_map)
             });
-            let rust_return_type = ts_type_to_rust_type(js_return_type.as_deref(), false);
+            let RustType::Regular(rust_return_type) =
+                ts_type_to_rust_type(js_return_type.as_deref(), false)
+            else {
+                panic!(
+                    "Cannot return a Rust callback: {}",
+                    js_return_type.as_deref().unwrap_or("")
+                )
+            };
 
             self.functions.push(FunctionInfo {
                 name: fn_decl.ident.sym.to_string(),
@@ -649,7 +754,9 @@ fn generate_function_wrapper(func: &FunctionInfo, asset_path: &LitStr) -> TokenS
         .iter()
         .map(|param| {
             let param_name = format_ident!("{}", param.name);
-            if param.rust_type == JSVALUE_INPUT {
+            if let RustType::Regular(value) = &param.rust_type
+                && value == JSVALUE_INPUT
+            {
                 quote! {
                     #[allow(deprecated)]
                     eval.send(#param_name.internal_get()).map_err(dioxus_use_js::JsError::Eval)?;
@@ -673,7 +780,9 @@ fn generate_function_wrapper(func: &FunctionInfo, asset_path: &LitStr) -> TokenS
         .params
         .iter()
         .map(|param| {
-            if param.rust_type == JSVALUE_INPUT {
+            if let RustType::Regular(value) = &param.rust_type
+                && value == JSVALUE_INPUT
+            {
                 format!(
                     "let {}Temp_ = await dioxus.recv();\nlet {} = window[{}Temp_];",
                     param.name, param.name, param.name
@@ -722,10 +831,7 @@ const {{{{ {js_func_name} }}}} = await import("{{}}");
         .iter()
         .map(|param| {
             let param_name = format_ident!("{}", param.name);
-            let type_tokens = param
-                .rust_type
-                .parse::<TokenStream2>()
-                .expect("Calculated Rust type should always be valid");
+            let type_tokens = param.rust_type.to_tokens();
             quote! { #param_name: #type_tokens }
         })
         .collect();
@@ -949,18 +1055,36 @@ mod tests {
 
     #[test]
     fn test_primitives() {
-        assert_eq!(ts_type_to_rust_type(Some("string"), false), "String");
-        assert_eq!(ts_type_to_rust_type(Some("string"), true), "&str");
-        assert_eq!(ts_type_to_rust_type(Some("number"), false), "f64");
-        assert_eq!(ts_type_to_rust_type(Some("number"), true), "&f64");
-        assert_eq!(ts_type_to_rust_type(Some("boolean"), false), "bool");
-        assert_eq!(ts_type_to_rust_type(Some("boolean"), true), "&bool");
         assert_eq!(
-            ts_type_to_rust_type(Some("object"), false),
+            ts_type_to_rust_type(Some("string"), false).to_string(),
+            "String"
+        );
+        assert_eq!(
+            ts_type_to_rust_type(Some("string"), true).to_string(),
+            "&str"
+        );
+        assert_eq!(
+            ts_type_to_rust_type(Some("number"), false).to_string(),
+            "f64"
+        );
+        assert_eq!(
+            ts_type_to_rust_type(Some("number"), true).to_string(),
+            "&f64"
+        );
+        assert_eq!(
+            ts_type_to_rust_type(Some("boolean"), false).to_string(),
+            "bool"
+        );
+        assert_eq!(
+            ts_type_to_rust_type(Some("boolean"), true).to_string(),
+            "&bool"
+        );
+        assert_eq!(
+            ts_type_to_rust_type(Some("object"), false).to_string(),
             "dioxus_use_js::SerdeJsonValue"
         );
         assert_eq!(
-            ts_type_to_rust_type(Some("object"), true),
+            ts_type_to_rust_type(Some("object"), true).to_string(),
             "impl dioxus_use_js::SerdeSerialize"
         );
     }
@@ -968,38 +1092,47 @@ mod tests {
     #[test]
     fn test_nullable_primitives() {
         assert_eq!(
-            ts_type_to_rust_type(Some("string | null"), true),
+            ts_type_to_rust_type(Some("string | null"), true).to_string(),
             "&Option<String>"
         );
         assert_eq!(
-            ts_type_to_rust_type(Some("string | null"), false),
+            ts_type_to_rust_type(Some("string | null"), false).to_string(),
             "Option<String>"
         );
         assert_eq!(
-            ts_type_to_rust_type(Some("number | null"), true),
+            ts_type_to_rust_type(Some("number | null"), true).to_string(),
             "&Option<f64>"
         );
         assert_eq!(
-            ts_type_to_rust_type(Some("number | null"), false),
+            ts_type_to_rust_type(Some("number | null"), false).to_string(),
             "Option<f64>"
         );
         assert_eq!(
-            ts_type_to_rust_type(Some("boolean | null"), true),
+            ts_type_to_rust_type(Some("boolean | null"), true).to_string(),
             "&Option<bool>"
         );
         assert_eq!(
-            ts_type_to_rust_type(Some("boolean | null"), false),
+            ts_type_to_rust_type(Some("boolean | null"), false).to_string(),
             "Option<bool>"
         );
     }
 
     #[test]
     fn test_arrays() {
-        assert_eq!(ts_type_to_rust_type(Some("string[]"), true), "&[String]");
-        assert_eq!(ts_type_to_rust_type(Some("string[]"), false), "Vec<String>");
-        assert_eq!(ts_type_to_rust_type(Some("Array<number>"), true), "&[f64]");
         assert_eq!(
-            ts_type_to_rust_type(Some("Array<number>"), false),
+            ts_type_to_rust_type(Some("string[]"), true).to_string(),
+            "&[String]"
+        );
+        assert_eq!(
+            ts_type_to_rust_type(Some("string[]"), false).to_string(),
+            "Vec<String>"
+        );
+        assert_eq!(
+            ts_type_to_rust_type(Some("Array<number>"), true).to_string(),
+            "&[f64]"
+        );
+        assert_eq!(
+            ts_type_to_rust_type(Some("Array<number>"), false).to_string(),
             "Vec<f64>"
         );
     }
@@ -1007,19 +1140,19 @@ mod tests {
     #[test]
     fn test_nullable_array_elements() {
         assert_eq!(
-            ts_type_to_rust_type(Some("(string | null)[]"), true),
+            ts_type_to_rust_type(Some("(string | null)[]"), true).to_string(),
             "&[Option<String>]"
         );
         assert_eq!(
-            ts_type_to_rust_type(Some("(string | null)[]"), false),
+            ts_type_to_rust_type(Some("(string | null)[]"), false).to_string(),
             "Vec<Option<String>>"
         );
         assert_eq!(
-            ts_type_to_rust_type(Some("Array<number | null>"), true),
+            ts_type_to_rust_type(Some("Array<number | null>"), true).to_string(),
             "&[Option<f64>]"
         );
         assert_eq!(
-            ts_type_to_rust_type(Some("Array<number | null>"), false),
+            ts_type_to_rust_type(Some("Array<number | null>"), false).to_string(),
             "Vec<Option<f64>>"
         );
     }
@@ -1027,19 +1160,19 @@ mod tests {
     #[test]
     fn test_nullable_array_itself() {
         assert_eq!(
-            ts_type_to_rust_type(Some("string[] | null"), true),
+            ts_type_to_rust_type(Some("string[] | null"), true).to_string(),
             "&Option<Vec<String>>"
         );
         assert_eq!(
-            ts_type_to_rust_type(Some("string[] | null"), false),
+            ts_type_to_rust_type(Some("string[] | null"), false).to_string(),
             "Option<Vec<String>>"
         );
         assert_eq!(
-            ts_type_to_rust_type(Some("Array<number> | null"), true),
+            ts_type_to_rust_type(Some("Array<number> | null"), true).to_string(),
             "&Option<Vec<f64>>"
         );
         assert_eq!(
-            ts_type_to_rust_type(Some("Array<number> | null"), false),
+            ts_type_to_rust_type(Some("Array<number> | null"), false).to_string(),
             "Option<Vec<f64>>"
         );
     }
@@ -1047,11 +1180,11 @@ mod tests {
     #[test]
     fn test_nullable_array_and_elements() {
         assert_eq!(
-            ts_type_to_rust_type(Some("Array<string | null> | null"), true),
+            ts_type_to_rust_type(Some("Array<string | null> | null"), true).to_string(),
             "&Option<Vec<Option<String>>>"
         );
         assert_eq!(
-            ts_type_to_rust_type(Some("Array<string | null> | null"), false),
+            ts_type_to_rust_type(Some("Array<string | null> | null"), false).to_string(),
             "Option<Vec<Option<String>>>"
         );
     }
@@ -1059,19 +1192,19 @@ mod tests {
     #[test]
     fn test_fallback_for_union() {
         assert_eq!(
-            ts_type_to_rust_type(Some("string | number"), true),
+            ts_type_to_rust_type(Some("string | number"), true).to_string(),
             "impl dioxus_use_js::SerdeSerialize"
         );
         assert_eq!(
-            ts_type_to_rust_type(Some("string | number"), false),
+            ts_type_to_rust_type(Some("string | number"), false).to_string(),
             "dioxus_use_js::SerdeJsonValue"
         );
         assert_eq!(
-            ts_type_to_rust_type(Some("string | number | null"), true),
+            ts_type_to_rust_type(Some("string | number | null"), true).to_string(),
             "impl dioxus_use_js::SerdeSerialize"
         );
         assert_eq!(
-            ts_type_to_rust_type(Some("string | number | null"), false),
+            ts_type_to_rust_type(Some("string | number | null"), false).to_string(),
             "dioxus_use_js::SerdeJsonValue"
         );
     }
@@ -1079,35 +1212,35 @@ mod tests {
     #[test]
     fn test_unknown_types() {
         assert_eq!(
-            ts_type_to_rust_type(Some("foo"), true),
+            ts_type_to_rust_type(Some("foo"), true).to_string(),
             "impl dioxus_use_js::SerdeSerialize"
         );
         assert_eq!(
-            ts_type_to_rust_type(Some("foo"), false),
+            ts_type_to_rust_type(Some("foo"), false).to_string(),
             "dioxus_use_js::SerdeJsonValue"
         );
         assert_eq!(
-            ts_type_to_rust_type(Some("any"), true),
+            ts_type_to_rust_type(Some("any"), true).to_string(),
             "impl dioxus_use_js::SerdeSerialize"
         );
         assert_eq!(
-            ts_type_to_rust_type(Some("any"), false),
+            ts_type_to_rust_type(Some("any"), false).to_string(),
             "dioxus_use_js::SerdeJsonValue"
         );
         assert_eq!(
-            ts_type_to_rust_type(Some("object"), true),
+            ts_type_to_rust_type(Some("object"), true).to_string(),
             "impl dioxus_use_js::SerdeSerialize"
         );
         assert_eq!(
-            ts_type_to_rust_type(Some("object"), false),
+            ts_type_to_rust_type(Some("object"), false).to_string(),
             "dioxus_use_js::SerdeJsonValue"
         );
         assert_eq!(
-            ts_type_to_rust_type(Some("unknown"), true),
+            ts_type_to_rust_type(Some("unknown"), true).to_string(),
             "impl dioxus_use_js::SerdeSerialize"
         );
         assert_eq!(
-            ts_type_to_rust_type(Some("unknown"), false),
+            ts_type_to_rust_type(Some("unknown"), false).to_string(),
             "dioxus_use_js::SerdeJsonValue"
         );
     }
@@ -1115,19 +1248,19 @@ mod tests {
     #[test]
     fn test_extra_whitespace() {
         assert_eq!(
-            ts_type_to_rust_type(Some("  string | null  "), true),
+            ts_type_to_rust_type(Some("  string | null  "), true).to_string(),
             "&Option<String>"
         );
         assert_eq!(
-            ts_type_to_rust_type(Some("  string | null  "), false),
+            ts_type_to_rust_type(Some("  string | null  "), false).to_string(),
             "Option<String>"
         );
         assert_eq!(
-            ts_type_to_rust_type(Some(" Array< string > "), true),
+            ts_type_to_rust_type(Some(" Array< string > "), true).to_string(),
             "&[String]"
         );
         assert_eq!(
-            ts_type_to_rust_type(Some(" Array< string > "), false),
+            ts_type_to_rust_type(Some(" Array< string > "), false).to_string(),
             "Vec<String>"
         );
     }
@@ -1135,27 +1268,27 @@ mod tests {
     #[test]
     fn test_map_types() {
         assert_eq!(
-            ts_type_to_rust_type(Some("Map<string, number>"), true),
+            ts_type_to_rust_type(Some("Map<string, number>"), true).to_string(),
             "&std::collections::HashMap<String, f64>"
         );
         assert_eq!(
-            ts_type_to_rust_type(Some("Map<string, number>"), false),
+            ts_type_to_rust_type(Some("Map<string, number>"), false).to_string(),
             "std::collections::HashMap<String, f64>"
         );
         assert_eq!(
-            ts_type_to_rust_type(Some("Map<string, boolean>"), true),
+            ts_type_to_rust_type(Some("Map<string, boolean>"), true).to_string(),
             "&std::collections::HashMap<String, bool>"
         );
         assert_eq!(
-            ts_type_to_rust_type(Some("Map<string, boolean>"), false),
+            ts_type_to_rust_type(Some("Map<string, boolean>"), false).to_string(),
             "std::collections::HashMap<String, bool>"
         );
         assert_eq!(
-            ts_type_to_rust_type(Some("Map<number, string>"), true),
+            ts_type_to_rust_type(Some("Map<number, string>"), true).to_string(),
             "&std::collections::HashMap<f64, String>"
         );
         assert_eq!(
-            ts_type_to_rust_type(Some("Map<number, string>"), false),
+            ts_type_to_rust_type(Some("Map<number, string>"), false).to_string(),
             "std::collections::HashMap<f64, String>"
         );
     }
@@ -1163,28 +1296,60 @@ mod tests {
     #[test]
     fn test_set_types() {
         assert_eq!(
-            ts_type_to_rust_type(Some("Set<string>"), true),
+            ts_type_to_rust_type(Some("Set<string>"), true).to_string(),
             "&std::collections::HashSet<String>"
         );
         assert_eq!(
-            ts_type_to_rust_type(Some("Set<string>"), false),
+            ts_type_to_rust_type(Some("Set<string>"), false).to_string(),
             "std::collections::HashSet<String>"
         );
         assert_eq!(
-            ts_type_to_rust_type(Some("Set<number>"), true),
+            ts_type_to_rust_type(Some("Set<number>"), true).to_string(),
             "&std::collections::HashSet<f64>"
         );
         assert_eq!(
-            ts_type_to_rust_type(Some("Set<number>"), false),
+            ts_type_to_rust_type(Some("Set<number>"), false).to_string(),
             "std::collections::HashSet<f64>"
         );
         assert_eq!(
-            ts_type_to_rust_type(Some("Set<boolean>"), true),
+            ts_type_to_rust_type(Some("Set<boolean>"), true).to_string(),
             "&std::collections::HashSet<bool>"
         );
         assert_eq!(
-            ts_type_to_rust_type(Some("Set<boolean>"), false),
+            ts_type_to_rust_type(Some("Set<boolean>"), false).to_string(),
             "std::collections::HashSet<bool>"
+        );
+    }
+
+    #[test]
+    fn test_rust_callback() {
+        assert_eq!(
+            ts_type_to_rust_type(Some("RustCallback<number,string>"), true).to_string(),
+            "impl AsyncFnMut(&f64) -> Result<String, Box<dyn std::error::Error>>"
+        );
+        assert_eq!(
+            ts_type_to_rust_type(Some("RustCallback<number>"), true).to_string(),
+            "impl AsyncFnMut(&f64) -> Result<(), Box<dyn std::error::Error>>"
+        );
+        assert_eq!(
+            ts_type_to_rust_type(Some("RustCallback"), true).to_string(),
+            "impl AsyncFnMut() -> Result<(), Box<dyn std::error::Error>>"
+        );
+    }
+
+    #[test]
+    fn test_promise_types() {
+        assert_eq!(
+            ts_type_to_rust_type(Some("Promise<string>"), false).to_string(),
+            "String"
+        );
+        assert_eq!(
+            ts_type_to_rust_type(Some("Promise<number>"), false).to_string(),
+            "f64"
+        );
+        assert_eq!(
+            ts_type_to_rust_type(Some("Promise<boolean>"), false).to_string(),
+            "bool"
         );
     }
 }
