@@ -108,11 +108,13 @@ use_js!("source.ts", "bundle.js"::*);
 
 ---
 
-## `JsValue`
+## `JsValue`: Javascript References
 
-Use `JsValue` in TS to **bypass serialization** and pass native JS values as opaque references between Rust and JavaScript. The JS value is automatically disposed when all references on the Rust side go out of scope.
+This special TypeScript type signals to the macro to **bypass serialization** and pass native JS values as opaque references between Rust and JavaScript. The macro generates the glue code required. The JS value is automatically disposed when all references on the Rust side go out of scope.
 
-### Example (TypeScript)
+### Example Usage
+
+**TypeScript:**
 
 ```ts
 type JsValue<T = any> = T;
@@ -143,4 +145,38 @@ export function useJsObject(value: JsValue<MyObject>): number {
 pub async fn createJsObject() -> Result<JsValue, JsError>;
 
 pub async fn useJsObject(value: &JsValue) -> Result<f64, JsError>;
+```
+
+## `RustCallback`: Passing Closures from Rust to JavaScript
+
+This special TypeScript type signals to the macro that a **Rust async closure** will be passed into the JavaScript function. The macro generates the glue code required. This enables advanced interop patterns, such as calling Rust logic from within JS — all while preserving type safety.
+
+### Example Usage
+
+**TypeScript:**
+
+```ts
+type RustCallback<A = any, R = any> = (arg: A) => Promise<R>;
+
+export async function useCallback(
+  startingValue: number,
+  callback: RustCallback<number, number>
+): Promise<number> {
+  let doubledValue = startingValue * 2;
+  let result = await callback(doubledValue); // Calls back into Rust
+  return result * 2;
+}
+```
+
+**Rust:**
+
+```rust
+let callback_example: Resource<Result<f64, JsError>> = use_resource(|| async move {
+    // Rust async closure that will be called by JS
+    let callback = async |value: f64| Ok(value * 2.0);
+
+    // Pass it into the JS function
+    let result = useCallback(&2.0, callback).await?;
+    Ok(result)
+});
 ```
