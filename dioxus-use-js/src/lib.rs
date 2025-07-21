@@ -2,9 +2,16 @@
 
 use std::{fmt::Display, sync::Arc};
 
-pub use dioxus_use_js_macro::*;
+pub use dioxus_use_js_macro::use_js;
 pub use dioxus::document::EvalError as DioxusEvalError;
 pub use serde_json::Error as SerdeJsonError;
+
+// exports used by macro
+pub use serde::Serialize as SerdeSerialize;
+pub use serde_json::Value as SerdeJsonValue;
+pub use dioxus::document::eval as dioxus_document_eval;
+
+
 
 //************************************************************************//
 

@@ -23,8 +23,8 @@ use syn::{
 const JSVALUE_JS: &str = "JsValue";
 const JSVALUE_OUTPUT: &str = "dioxus_use_js::JsValue";
 const JSVALUE_INPUT: &str = "&dioxus_use_js::JsValue";
-const SERDE_OUTPUT: &str = "serde_json::Value";
-const SERDE_INPUT: &str = "impl serde::Serialize";
+const SERDE_OUTPUT: &str = "dioxus_use_js::SerdeJsonValue";
+const SERDE_INPUT: &str = "impl dioxus_use_js::SerdeSerialize";
 
 #[derive(Debug, Clone)]
 enum ImportSpec {
@@ -278,7 +278,7 @@ fn ts_type_to_rust_type_helper(mut ts_type: &str, is_input: bool, is_root: bool)
     if ts_type.starts_with("Set<") && ts_type.ends_with(">") {
         let inner = &ts_type[4..ts_type.len() - 1];
         let inner_rust = ts_type_to_rust_type_helper(inner, is_input, false)?;
-        return Some(format!("HashSet<{}>", inner_rust));
+        return Some(format!("std::collections::HashSet<{}>", inner_rust));
     }
 
     if ts_type.starts_with("Map<") && ts_type.ends_with(">") {
@@ -302,7 +302,7 @@ fn ts_type_to_rust_type_helper(mut ts_type: &str, is_input: bool, is_root: bool)
             let value = &value[1..]; // skip comma
             let key_rust = ts_type_to_rust_type_helper(key.trim(), is_input, false)?;
             let value_rust = ts_type_to_rust_type_helper(value.trim(), is_input, false)?;
-            return Some(format!("HashMap<{}, {}>", key_rust, value_rust));
+            return Some(format!("std::collections::HashMap<{}, {}>", key_rust, value_rust));
         } else {
             return None;
         }
@@ -828,7 +828,7 @@ const {{{{ {js_func_name} }}}} = await import("{{}}");
         pub async fn #func_name(#(#param_types),*) -> #return_type_tokens {
             const MODULE: Asset = asset!(#asset_path);
             let js = format!(#js_format, MODULE);
-            let eval = dioxus::document::eval(js.as_str());
+            let eval = dioxus_use_js::dioxus_document_eval(js.as_str());
             #(#send_calls)*
             #return_value
         }
@@ -998,11 +998,11 @@ mod tests {
         assert_eq!(ts_type_to_rust_type(Some("boolean"), true), "&bool");
         assert_eq!(
             ts_type_to_rust_type(Some("object"), false),
-            "serde_json::Value"
+            "dioxus_use_js::SerdeJsonValue"
         );
         assert_eq!(
             ts_type_to_rust_type(Some("object"), true),
-            "impl serde::Serialize"
+            "impl dioxus_use_js::SerdeSerialize"
         );
     }
 
@@ -1101,19 +1101,19 @@ mod tests {
     fn test_fallback_for_union() {
         assert_eq!(
             ts_type_to_rust_type(Some("string | number"), true),
-            "impl serde::Serialize"
+            "impl dioxus_use_js::SerdeSerialize"
         );
         assert_eq!(
             ts_type_to_rust_type(Some("string | number"), false),
-            "serde_json::Value"
+            "dioxus_use_js::SerdeJsonValue"
         );
         assert_eq!(
             ts_type_to_rust_type(Some("string | number | null"), true),
-            "impl serde::Serialize"
+            "impl dioxus_use_js::SerdeSerialize"
         );
         assert_eq!(
             ts_type_to_rust_type(Some("string | number | null"), false),
-            "serde_json::Value"
+            "dioxus_use_js::SerdeJsonValue"
         );
     }
 
@@ -1121,35 +1121,35 @@ mod tests {
     fn test_unknown_types() {
         assert_eq!(
             ts_type_to_rust_type(Some("foo"), true),
-            "impl serde::Serialize"
+            "impl dioxus_use_js::SerdeSerialize"
         );
         assert_eq!(
             ts_type_to_rust_type(Some("foo"), false),
-            "serde_json::Value"
+            "dioxus_use_js::SerdeJsonValue"
         );
         assert_eq!(
             ts_type_to_rust_type(Some("any"), true),
-            "impl serde::Serialize"
+            "impl dioxus_use_js::SerdeSerialize"
         );
         assert_eq!(
             ts_type_to_rust_type(Some("any"), false),
-            "serde_json::Value"
+            "dioxus_use_js::SerdeJsonValue"
         );
         assert_eq!(
             ts_type_to_rust_type(Some("object"), true),
-            "impl serde::Serialize"
+            "impl dioxus_use_js::SerdeSerialize"
         );
         assert_eq!(
             ts_type_to_rust_type(Some("object"), false),
-            "serde_json::Value"
+            "dioxus_use_js::SerdeJsonValue"
         );
         assert_eq!(
             ts_type_to_rust_type(Some("unknown"), true),
-            "impl serde::Serialize"
+            "impl dioxus_use_js::SerdeSerialize"
         );
         assert_eq!(
             ts_type_to_rust_type(Some("unknown"), false),
-            "serde_json::Value"
+            "dioxus_use_js::SerdeJsonValue"
         );
     }
 
@@ -1177,27 +1177,27 @@ mod tests {
     fn test_map_types() {
         assert_eq!(
             ts_type_to_rust_type(Some("Map<string, number>"), true),
-            "&HashMap<String, f64>"
+            "&std::collections::HashMap<String, f64>"
         );
         assert_eq!(
             ts_type_to_rust_type(Some("Map<string, number>"), false),
-            "HashMap<String, f64>"
+            "std::collections::HashMap<String, f64>"
         );
         assert_eq!(
             ts_type_to_rust_type(Some("Map<string, boolean>"), true),
-            "&HashMap<String, bool>"
+            "&std::collections::HashMap<String, bool>"
         );
         assert_eq!(
             ts_type_to_rust_type(Some("Map<string, boolean>"), false),
-            "HashMap<String, bool>"
+            "std::collections::HashMap<String, bool>"
         );
         assert_eq!(
             ts_type_to_rust_type(Some("Map<number, string>"), true),
-            "&HashMap<f64, String>"
+            "&std::collections::HashMap<f64, String>"
         );
         assert_eq!(
             ts_type_to_rust_type(Some("Map<number, string>"), false),
-            "HashMap<f64, String>"
+            "std::collections::HashMap<f64, String>"
         );
     }
 
@@ -1205,27 +1205,27 @@ mod tests {
     fn test_set_types() {
         assert_eq!(
             ts_type_to_rust_type(Some("Set<string>"), true),
-            "&HashSet<String>"
+            "&std::collections::HashSet<String>"
         );
         assert_eq!(
             ts_type_to_rust_type(Some("Set<string>"), false),
-            "HashSet<String>"
+            "std::collections::HashSet<String>"
         );
         assert_eq!(
             ts_type_to_rust_type(Some("Set<number>"), true),
-            "&HashSet<f64>"
+            "&std::collections::HashSet<f64>"
         );
         assert_eq!(
             ts_type_to_rust_type(Some("Set<number>"), false),
-            "HashSet<f64>"
+            "std::collections::HashSet<f64>"
         );
         assert_eq!(
             ts_type_to_rust_type(Some("Set<boolean>"), true),
-            "&HashSet<bool>"
+            "&std::collections::HashSet<bool>"
         );
         assert_eq!(
             ts_type_to_rust_type(Some("Set<boolean>"), false),
-            "HashSet<bool>"
+            "std::collections::HashSet<bool>"
         );
     }
 }
