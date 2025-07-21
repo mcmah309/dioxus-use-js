@@ -19,7 +19,7 @@ export function greeting(from, to) {
 
 Bind it in Rust:
 
-```rust
+```rust,ignore
 use dioxus_use_js::use_js;
 
 use_js!("assets/example.js"::greeting);
@@ -27,13 +27,13 @@ use_js!("assets/example.js"::greeting);
 
 **Generated Rust signature**:
 
-```rust
+```rust,ignore
 async fn greeting(from: impl Serialize, to: impl Serialize) -> Result<Value, JsError>;
 ```
 
 Use it like:
 
-```rust
+```rust,ignore
 let val = greeting("Alice", "Bob").await?;
 let s: String = serde_json::from_value(val)?;
 ```
@@ -55,18 +55,18 @@ export function greeting(from: string, to: string): string {
 Compile with:
 
 ```sh
-bun build example.ts --outfile example.js
+bun build src/example.ts --outfile assets/example.js
 ```
 
 Bind with:
 
-```rust
+```rust,ignore
 use_js!("src/example.ts", "assets/example.js"::{greeting});
 ```
 
 **Generated Rust signature**:
 
-```rust
+```rust,ignore
 async fn greeting(from: &str, to: &str) -> Result<String, JsError>;
 ```
 
@@ -76,7 +76,7 @@ async fn greeting(from: &str, to: &str) -> Result<String, JsError>;
 
 ### Js
 
-```rust
+```rust,ignore
 use_js!("bundle.js"::function);
 use_js!("bundle.js"::{func1, func2});
 use_js!("bundle.js"::*);
@@ -84,7 +84,7 @@ use_js!("bundle.js"::*);
 
 ### Ts
 
-```rust
+```rust,ignore
 use_js!("source.ts", "bundle.js"::function);
 use_js!("source.ts", "bundle.js"::{func1, func2});
 use_js!("source.ts", "bundle.js"::*);
@@ -141,7 +141,7 @@ export function useJsObject(value: JsValue<MyObject>): number {
 
 **Generated Rust signature**:
 
-```rust
+```rust,ignore
 pub async fn createJsObject() -> Result<JsValue, JsError>;
 
 pub async fn useJsObject(value: &JsValue) -> Result<f64, JsError>;
@@ -170,7 +170,7 @@ export async function useCallback(
 
 **Rust:**
 
-```rust
+```rust,ignore
 let callback_example: Resource<Result<f64, JsError>> = use_resource(|| async move {
     // Rust async closure that will be called by JS
     let callback = async |value: f64| Ok(value * 2.0);

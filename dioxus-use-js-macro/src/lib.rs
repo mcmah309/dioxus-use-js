@@ -1047,59 +1047,7 @@ const {{{{ {js_func_name} }}}} = await import("{{}}");
     }
 }
 
-/// A macro to create rust binding to javascript and typescript functions.
-///```rust,no_run
-/// use dioxus::prelude::*;
-/// use dioxus_use_js::use_js;
-///
-/// // Generate the greeting function at compile time
-/// use_js!("example/assets/example.js"::greeting);
-///
-///  // Or generate multiple functions:
-///  // use_js!("example/assets/example.js"::{greeting, add});
-///
-///  // Or generate all exported functions:
-///  // use_js!("example/assets/example.js"::*);
-///
-/// fn main() {
-///     launch(App);
-/// }
-///
-/// #[component]
-/// fn App() -> Element {
-///     let future = use_resource(|| async move {
-///         let from = "dave";
-///         let to = "john";
-///
-///         // Now we can call the generated function directly!
-///         let greeting_result = greeting(from, to)
-///             .await
-///             .map_err(Box::<dyn std::error::Error>::from)?;
-///         let greeting: String =
-///             serde_json::from_value(greeting_result).map_err(Box::<dyn std::error::Error>::from)?;
-///         Ok::<String, Box<dyn std::error::Error>>(greeting)
-///     });
-///
-///     rsx!(
-///         div {
-///             h1 { "Dioxus `use_js!` macro example!" }
-///             {
-///                 match &*future.read() {
-///                     Some(Ok(greeting)) => rsx! {
-///                         p { "Greeting from JavaScript: {greeting}" }
-///                     },
-///                     Some(Err(e)) => rsx! {
-///                         p { "Error: {e}" }
-///                     },
-///                     None => rsx! {
-///                         p { "Running js..." }
-///                     },
-///                 }
-///             }
-///         }
-///     )
-/// }
-/// ```
+/// A macro to create rust bindings to javascript and typescript functions. See [README](https://github.com/mcmah309/dioxus-use-js) and [example](https://github.com/mcmah309/dioxus-use-js/blob/master/example/src/main.rs) for more.
 #[proc_macro]
 pub fn use_js(input: TokenStream) -> TokenStream {
     let input = parse_macro_input!(input as UseJsInput);
@@ -1472,11 +1420,11 @@ mod tests {
     fn test_rust_callback() {
         assert_eq!(
             ts_type_to_rust_type(Some("RustCallback<number,string>"), true).to_string(),
-            "impl AsyncFnMut(&f64) -> Result<String, Box<dyn std::error::Error>>"
+            "impl AsyncFnMut(f64) -> Result<String, Box<dyn std::error::Error>>"
         );
         assert_eq!(
             ts_type_to_rust_type(Some("RustCallback<number>"), true).to_string(),
-            "impl AsyncFnMut(&f64) -> Result<(), Box<dyn std::error::Error>>"
+            "impl AsyncFnMut(f64) -> Result<(), Box<dyn std::error::Error>>"
         );
         assert_eq!(
             ts_type_to_rust_type(Some("RustCallback"), true).to_string(),

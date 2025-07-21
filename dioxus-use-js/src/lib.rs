@@ -52,17 +52,12 @@ impl std::error::Error for JsError {}
 /// 
 /// An instance of this is created or used by e.g.
 /// ```rust,ignore
-/// dioxus_use_js::use_js! {
-///     ts: "ts/example.ts",
-///     bundle: "assets/example.js",
-///     functions: usingJsValue,
-/// }
+/// dioxus_use_js::use_js!("ts/example.ts", "assets/example.js"::usingJsValue);
 /// ```
 /// Where `"ts/example.ts"` uses this marker type
 /// ```ts
 /// type JsValue<T = any> = T;
 /// ```
-/// And `usingJsValue` uses `JsValue`.
 /// 
 /// This uses `Arc` internally and the value on the js side is destroyed when the last reference is dropped
 // Dev Note: No `serde::Serialize` or `serde::Deserialize` on purpose since the value is destroyed when dropped
