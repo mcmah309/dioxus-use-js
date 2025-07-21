@@ -1,15 +1,17 @@
 use dioxus::{logger::tracing::Level, prelude::*};
 use dioxus_use_js::{use_js, JsError};
 
-// Generate the following functions at compile time with the correct Rust types determined from the `ts` source:
+// Use typescript to generate the following functions at compile time 
+// with the correct Rust types determined from the `ts` source:
 use_js! {
     ts: "ts/example.ts",
     bundle: "assets/example.js",
-    functions: {greeting, createJsObjectWithFunction, useObjectsFunction},
+    functions: {greeting, createJsObject, useJsObject},
 }
-// Note: The above format with `ts` source is required for `JsValue` to work. Otherwise it cannot be
-// determined that a shim is needed and direct serialization and deserialization is used instead.
+// Note: Typescript is not needed, as seen in the below commented out examples.
+// But it is required for exact Rust type generation and `JsValue`.
 
+// Javascript can also be used directly without typescript.
 // Generate a function without the correct Rust types:
 // use_js!("assets/example.js"::greeting);
 
@@ -30,18 +32,19 @@ fn App() -> Element {
         let from = "john";
         let to = "dave";
         // Now we can call the generated function directly!
-        let greeting = greeting(from, to).await?;
-        Ok(greeting)
+        let output = greeting(from, to).await?;
+        Ok(output)
     });
 
     let js_value_example: Resource<Result<f64, JsError>> = use_resource(|| async move {
         // No serialization!
         // The value is kept on the js side and a reference to it is kept on the rust side.
         // The value is automatically disposed when all rust references no longer exist.
-        let js_value = createJsObjectWithFunction().await?;
-        let js_value_output = useObjectsFunction(&js_value).await?;
-        // `js_value` will be disposed on the js side since we are not returning it, thus all references no longer exist.
-        Ok(js_value_output)
+        let js_value = createJsObject().await?;
+        let output = useJsObject(&js_value).await?;
+        // Since `js_value` is dropped here and all references no longer exist,
+        // the referenced value will be disposed on the js side.
+        Ok(output)
     });
 
     rsx!(

@@ -6,7 +6,7 @@ export function greeting(from, to) {
 }
 
 /// Creates a js value that is not serialized
-export function createJsObjectWithFunction() {
+export function createJsObject() {
     return {
         name: "example",
         method: function (value) {
@@ -16,7 +16,7 @@ export function createJsObjectWithFunction() {
 }
 
 /// Uses a js value
-export function useObjectsFunction(value) {
+export function useJsObject(value) {
     let result = value.method(2);
     return result;
 }
