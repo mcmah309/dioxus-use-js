@@ -1,16 +1,22 @@
 /** 
- * This is a doc comment
- * second line
+ * Creates a greeting
 */
 export function greeting(from, to) {
     return `Hello ${to}, this is ${from} speaking from JavaScript!`;
 }
 
-/// This is another doc comment
-export function add(a, b) {
-    return a + b;
+/// Creates a js value that is not serialized
+export function createJsObjectWithFunction() {
+    return {
+        name: "example",
+        method: function (value) {
+            return value + 25;
+        },
+    };
 }
 
-export function processData(data) {
-    return data.map(item => item.toUpperCase());
+/// Uses a js value
+export function useObjectsFunction(value) {
+    let result = value.method(2);
+    return result;
 }
