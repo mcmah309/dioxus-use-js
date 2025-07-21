@@ -10,6 +10,6 @@ repository = "https://github.com/mcmah309/dioxus-use-js"
 
 [dependencies]
 dioxus-use-js-macro = { version = "=0.1.3", path = "../dioxus-use-js-macro" }
-dioxus = { version = "0.7.0-alpha.2" }
+dioxus = { version = "*" } # todo remove this when 0.7.0 is released
 serde = { version = "1" }
 serde_json = { version = "1" }
