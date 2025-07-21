@@ -6,7 +6,9 @@ pub use dioxus_use_js_macro::use_js;
 
 // We export these so downstreams don't need `serde` or `serde_json` directly
 // exports used by macro.
+#[doc(hidden)]
 pub use serde::Serialize as SerdeSerialize;
+#[doc(hidden)]
 pub use serde_json::Value as SerdeJsonValue;
 
 #[doc(hidden)]
