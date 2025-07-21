@@ -1,6 +1,6 @@
 [package]
 name = "dioxus-use-js"
-version = "0.2.0-alpha.0"
+version = "0.2.0-alpha.1"
 authors = ["Dillon Henry McMahon"]
 edition = "2024"
 description = "javascript use bridge macro for Dioxus"
@@ -9,7 +9,7 @@ repository = "https://github.com/mcmah309/dioxus-use-js"
 
 
 [dependencies]
-dioxus-use-js-macro = { version = "=0.2.0-alpha.0", path = "../dioxus-use-js-macro" }
+dioxus-use-js-macro = { version = "=0.2.0-alpha.1", path = "../dioxus-use-js-macro" }
 dioxus = { version = "0.7.0-alpha.3" }
 serde = { version = "1" }
 serde_json = { version = "1" }
