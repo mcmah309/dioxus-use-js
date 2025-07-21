@@ -210,7 +210,7 @@ fn ts_type_to_rust_type(ts_type: Option<&str>, is_input: bool) -> String {
     let Some(ts_type) = ts_type else {
         return (if is_input { SERDE_INPUT } else { SERDE_OUTPUT }).to_owned();
     };
-    if ts_type == JSVALUE_JS {
+    if ts_type.starts_with(JSVALUE_JS) {
         if is_input {
             return JSVALUE_INPUT.to_owned();
         } else {
