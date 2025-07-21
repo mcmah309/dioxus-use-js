@@ -9,7 +9,7 @@ edition = "2021"
 
 [dependencies]
 dioxus-use-js = { path = "../dioxus-use-js" }
-dioxus = { version = "0.7.0-alpha.2", features = [] }
+dioxus = { version = "0.7.0-alpha.3" }
 
 [features]
 default = ["web"]

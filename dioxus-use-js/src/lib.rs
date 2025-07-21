@@ -92,7 +92,7 @@ impl Drop for Inner {
     fn drop(&mut self) {
         let object_name = std::mem::take(&mut self.0);
         // work around for no async drop trait
-        dioxus::prelude::spawn_forever(async move {
+        dioxus::core::spawn_forever(async move {
             let eval = dioxus::document::eval(
                 r#"
 const objectName = await dioxus.recv();
