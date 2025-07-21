@@ -164,12 +164,21 @@ export async function useCallback(
   callback: RustCallback<number, number>
 ): Promise<number> {
   let doubledValue = startingValue * 2;
-  let result = await callback(doubledValue); // Calls back into Rust
-  return result * 2;
+  let quadValue = await callback(doubledValue); // Calls back into Rust
+  return quadValue * 2;
 }
 ```
 
-**Rust:**
+**Generated Rust signature**:
+
+```rust,ignore
+pub async fn useCallback(
+    startingValue: &f64,
+    mut callback: impl AsyncFnMut(f64) -> Result<f64, Box<dyn Error>>,
+) -> Result<f64, JsError>;
+```
+
+**Usage:**
 
 ```rust,ignore
 let callback_example: Resource<Result<f64, JsError>> = use_resource(|| async move {
@@ -177,7 +186,7 @@ let callback_example: Resource<Result<f64, JsError>> = use_resource(|| async mov
     let callback = async |value: f64| Ok(value * 2.0);
 
     // Pass it into the JS function
-    let result = useCallback(&2.0, callback).await?;
-    Ok(result)
+    let value = useCallback(&2.0, callback).await?;
+    Ok(value)
 });
 ```
