@@ -5,7 +5,7 @@ Works across **Web**, **Desktop**, and **Mobile** — no `wasm-bindgen` required
 
 ---
 
-## JavaScript Usage (Recommended)
+## JavaScript Usage
 
 You can write plain JavaScript and bind exported functions directly.
 
@@ -40,7 +40,7 @@ let s: String = serde_json::from_value(val)?;
 
 ---
 
-## TypeScript Usage (Optional)
+## TypeScript Usage
 
 If you use TypeScript, the macro will parse types to produce more accurate Rust bindings.
 
@@ -109,12 +109,10 @@ use_js! {
 | `T[]`                 | `&[T]`           | `Vec<T>`          |
 | `Map<T, TT>`          | `&HashMap<T, TT>`| `HashMap<T, TT>`   |
 | `Set<T>`              | `&HashSet<T>`    | `HashSet<T>`    |
-| `any`, `unknown`      | `impl serde::Serialize` | `serde_json::Value`|
-| no type               | `impl serde::Seraialize`| `serde_json::Value`|
-| invalid `T`               | `impl serde::Seraialize`| `serde_json::Value`|
+| `any`, `unknown`, no type, invalid type      | `impl serde::Serialize` | `serde_json::Value`|
 | `JsValue<T>`             | `&JsValue`       | `JsValue`         |
 
-Where `T` is a value in the current chart recursively.
+Where `T` is a value in the current column recursively.
 
 ---
 
