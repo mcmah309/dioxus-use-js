@@ -3,14 +3,16 @@
 use std::{fmt::Display, sync::Arc};
 
 pub use dioxus_use_js_macro::*;
+pub use dioxus::document::EvalError as DioxusEvalError;
+pub use serde_json::Error as SerdeJsonError;
 
 //************************************************************************//
 
 /// An error related to the execution of a javascript operation
 #[derive(Debug)]
 pub enum JsError {
-    Eval(dioxus::document::EvalError),
-    Deserialize(serde_json::Error),
+    Eval(DioxusEvalError),
+    Deserialize(SerdeJsonError),
 }
 
 impl std::fmt::Display for JsError {
