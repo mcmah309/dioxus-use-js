@@ -197,16 +197,33 @@ impl FunctionVisitor {
     }
 }
 
-fn ts_type_to_rust_type(ts_type: &str) -> Option<String> {
+fn ts_type_to_rust_type(ts_type: &str, is_input: bool) -> Option<String> {
     if ts_type == JSVALUE_JS {
-        return Some(JSVALUE_RUST.to_string());
+        if is_input {
+            return Some(format!("&{}", JSVALUE_RUST));
+        } else {
+            return Some(JSVALUE_JS.to_string());
+        }
     }
-    ts_type_to_rust_type_helper(ts_type)
+    let ty = ts_type_to_rust_type_helper(ts_type, is_input, true);
+    if is_input {
+        if let Some(ty) = ty {
+            if ty.starts_with("&") {
+                Some(ty)
+            } else {
+                Some(format!("&{}", ty))
+            }
+        } else {
+            None
+        }
+    } else {
+        ty
+    }
 }
 
 /// Simple converter, needs null in the second position to enable Option, handles regular ts types.
 /// Does not handle all edge cases
-fn ts_type_to_rust_type_helper(mut ts_type: &str) -> Option<String> {
+fn ts_type_to_rust_type_helper(mut ts_type: &str, is_input: bool, is_root: bool) -> Option<String> {
     ts_type = ts_type.trim();
     while ts_type.starts_with("(") && ts_type.ends_with(")") {
         ts_type = &ts_type[1..ts_type.len() - 1].trim();
@@ -219,25 +236,33 @@ fn ts_type_to_rust_type_helper(mut ts_type: &str) -> Option<String> {
             ts_type = ts_type.strip_suffix('|').unwrap();
             ts_type = ts_type.trim_end();
         }
-        let inner = ts_type_to_rust_type_helper(ts_type)?;
+        let inner = ts_type_to_rust_type_helper(ts_type, is_input, false)?;
         return Some(format!("Option<{}>", inner));
     }
 
     if ts_type.ends_with("[]") {
         ts_type = ts_type.strip_suffix("[]").unwrap();
-        let inner = ts_type_to_rust_type_helper(ts_type)?;
-        return Some(format!("Vec<{}>", inner));
+        let inner = ts_type_to_rust_type_helper(ts_type, is_input, false)?;
+        if is_input && is_root {
+            return Some(format!("&[{}]", inner));
+        } else {
+            return Some(format!("Vec<{}>", inner));
+        }
     }
 
     if ts_type.starts_with("Array<") && ts_type.ends_with(">") {
         let inner = &ts_type[6..ts_type.len() - 1];
-        let inner_rust = ts_type_to_rust_type_helper(inner)?;
-        return Some(format!("Vec<{}>", inner_rust));
+        let inner = ts_type_to_rust_type_helper(inner, is_input, false)?;
+        if is_input && is_root {
+            return Some(format!("&[{}]", inner));
+        } else {
+            return Some(format!("Vec<{}>", inner));
+        }
     }
 
     if ts_type.starts_with("Set<") && ts_type.ends_with(">") {
         let inner = &ts_type[4..ts_type.len() - 1];
-        let inner_rust = ts_type_to_rust_type_helper(inner)?;
+        let inner_rust = ts_type_to_rust_type_helper(inner, is_input, false)?;
         return Some(format!("HashSet<{}>", inner_rust));
     }
 
@@ -247,13 +272,19 @@ fn ts_type_to_rust_type_helper(mut ts_type: &str) -> Option<String> {
         if params.len() != 2 {
             return None;
         }
-        let key_type = ts_type_to_rust_type_helper(params[0])?;
-        let value_type = ts_type_to_rust_type_helper(params[1])?;
+        let key_type = ts_type_to_rust_type_helper(params[0], is_input, false)?;
+        let value_type = ts_type_to_rust_type_helper(params[1], is_input, false)?;
         return Some(format!("HashMap<{}, {}>", key_type, value_type));
     }
 
     let rust_type = match ts_type {
-        "string" => "String",
+        "string" => {
+            if is_input && is_root {
+                "&str"
+            } else {
+                "String"
+            }
+        }
         "number" => "f64",
         "boolean" => "bool",
         "any" => "serde_json::Value",
@@ -291,7 +322,7 @@ fn function_params_to_param_info(params: &[Param], source_map: &SourceMap) -> Ve
                 .and_then(|ident| ident.type_ann.as_ref())
                 .and_then(|type_ann| {
                     let ty = &type_ann.type_ann;
-                    ts_type_to_rust_type(&type_to_string(ty, source_map))
+                    ts_type_to_rust_type(&type_to_string(ty, source_map), true)
                 });
 
             ParamInfo { name, rust_type }
@@ -314,7 +345,7 @@ fn function_pat_to_param_info(pats: &[Pat], source_map: &SourceMap) -> Vec<Param
                 .and_then(|ident| ident.type_ann.as_ref())
                 .and_then(|type_ann| {
                     let ty = &type_ann.type_ann;
-                    ts_type_to_rust_type(&type_to_string(ty, source_map))
+                    ts_type_to_rust_type(&type_to_string(ty, source_map), true)
                 });
 
             ParamInfo { name, rust_type }
@@ -331,7 +362,7 @@ impl Visit for FunctionVisitor {
 
         let return_type = node.function.return_type.as_ref().and_then(|type_ann| {
             let ty = &type_ann.type_ann;
-            ts_type_to_rust_type(&type_to_string(ty, &self.source_map))
+            ts_type_to_rust_type(&type_to_string(ty, &self.source_map), false)
         });
 
         self.functions.push(FunctionInfo {
@@ -362,7 +393,7 @@ impl Visit for FunctionVisitor {
                         let return_type =
                             fn_expr.function.return_type.as_ref().and_then(|type_ann| {
                                 let ty = &type_ann.type_ann;
-                                ts_type_to_rust_type(&type_to_string(ty, &self.source_map))
+                                ts_type_to_rust_type(&type_to_string(ty, &self.source_map), false)
                             });
 
                         self.functions.push(FunctionInfo {
@@ -380,7 +411,7 @@ impl Visit for FunctionVisitor {
 
                         let return_type = arrow_fn.return_type.as_ref().and_then(|type_ann| {
                             let ty = &type_ann.type_ann;
-                            ts_type_to_rust_type(&type_to_string(ty, &self.source_map))
+                            ts_type_to_rust_type(&type_to_string(ty, &self.source_map), false)
                         });
 
                         self.functions.push(FunctionInfo {
@@ -409,7 +440,7 @@ impl Visit for FunctionVisitor {
 
             let return_type = fn_decl.function.return_type.as_ref().and_then(|type_ann| {
                 let ty = &type_ann.type_ann;
-                ts_type_to_rust_type(&type_to_string(ty, &self.source_map))
+                ts_type_to_rust_type(&type_to_string(ty, &self.source_map), false)
             });
 
             self.functions.push(FunctionInfo {
@@ -658,10 +689,7 @@ const {{{{ {js_func_name} }}}} = await import("{{}}");
             if let Some(rust_type) = &param.rust_type {
                 // Try to parse the type, but fall back to impl serde::Serialize if parsing fails
                 if let Ok(type_tokens) = rust_type.parse::<TokenStream2>() {
-                    quote! { #param_name: &#type_tokens }
-                } else if rust_type.as_str() == JSVALUE_RUST {
-                    let js_value_type = format_ident!("{}", JSVALUE_RUST);
-                    quote! { #param_name: &#js_value_type }
+                    quote! { #param_name: #type_tokens }
                 } else {
                     quote! { #param_name: impl serde::Serialize }
                 }
@@ -893,27 +921,64 @@ mod tests {
 
     #[test]
     fn test_primitives() {
-        assert_eq!(ts_type_to_rust_type("string"), Some("String".to_owned()));
-        assert_eq!(ts_type_to_rust_type("number"), Some("f64".to_owned()));
-        assert_eq!(ts_type_to_rust_type("boolean"), Some("bool".to_owned()));
         assert_eq!(
-            ts_type_to_rust_type("object"),
+            ts_type_to_rust_type("string", false),
+            Some("String".to_owned())
+        );
+        assert_eq!(
+            ts_type_to_rust_type("string", true),
+            Some("&str".to_owned())
+        );
+        assert_eq!(
+            ts_type_to_rust_type("number", false),
+            Some("f64".to_owned())
+        );
+        assert_eq!(
+            ts_type_to_rust_type("number", true),
+            Some("&f64".to_owned())
+        );
+        assert_eq!(
+            ts_type_to_rust_type("boolean", false),
+            Some("bool".to_owned())
+        );
+        assert_eq!(
+            ts_type_to_rust_type("boolean", true),
+            Some("&bool".to_owned())
+        );
+        assert_eq!(
+            ts_type_to_rust_type("object", false),
             Some("serde_json::Value".to_owned())
+        );
+        assert_eq!(
+            ts_type_to_rust_type("object", true),
+            Some("&serde_json::Value".to_owned())
         );
     }
 
     #[test]
     fn test_nullable_primitives() {
         assert_eq!(
-            ts_type_to_rust_type("string | null"),
+            ts_type_to_rust_type("string | null", true),
+            Some("&Option<String>".to_owned())
+        );
+        assert_eq!(
+            ts_type_to_rust_type("string | null", false),
             Some("Option<String>".to_owned())
         );
         assert_eq!(
-            ts_type_to_rust_type("number | null"),
+            ts_type_to_rust_type("number | null", true),
+            Some("&Option<f64>".to_owned())
+        );
+        assert_eq!(
+            ts_type_to_rust_type("number | null", false),
             Some("Option<f64>".to_owned())
         );
         assert_eq!(
-            ts_type_to_rust_type("boolean | null"),
+            ts_type_to_rust_type("boolean | null", true),
+            Some("&Option<bool>".to_owned())
+        );
+        assert_eq!(
+            ts_type_to_rust_type("boolean | null", false),
             Some("Option<bool>".to_owned())
         );
     }
@@ -921,11 +986,19 @@ mod tests {
     #[test]
     fn test_arrays() {
         assert_eq!(
-            ts_type_to_rust_type("string[]"),
+            ts_type_to_rust_type("string[]", true),
+            Some("&[String]".to_owned())
+        );
+        assert_eq!(
+            ts_type_to_rust_type("string[]", false),
             Some("Vec<String>".to_owned())
         );
         assert_eq!(
-            ts_type_to_rust_type("Array<number>"),
+            ts_type_to_rust_type("Array<number>", true),
+            Some("&[f64]".to_owned())
+        );
+        assert_eq!(
+            ts_type_to_rust_type("Array<number>", false),
             Some("Vec<f64>".to_owned())
         );
     }
@@ -933,11 +1006,19 @@ mod tests {
     #[test]
     fn test_nullable_array_elements() {
         assert_eq!(
-            ts_type_to_rust_type("(string | null)[]"),
+            ts_type_to_rust_type("(string | null)[]", true),
+            Some("&[Option<String>]".to_owned())
+        );
+        assert_eq!(
+            ts_type_to_rust_type("(string | null)[]", false),
             Some("Vec<Option<String>>".to_owned())
         );
         assert_eq!(
-            ts_type_to_rust_type("Array<number | null>"),
+            ts_type_to_rust_type("Array<number | null>", true),
+            Some("&[Option<f64>]".to_owned())
+        );
+        assert_eq!(
+            ts_type_to_rust_type("Array<number | null>", false),
             Some("Vec<Option<f64>>".to_owned())
         );
     }
@@ -945,11 +1026,19 @@ mod tests {
     #[test]
     fn test_nullable_array_itself() {
         assert_eq!(
-            ts_type_to_rust_type("string[] | null"),
+            ts_type_to_rust_type("string[] | null", true),
+            Some("&Option<Vec<String>>".to_owned())
+        );
+        assert_eq!(
+            ts_type_to_rust_type("string[] | null", false),
             Some("Option<Vec<String>>".to_owned())
         );
         assert_eq!(
-            ts_type_to_rust_type("Array<number> | null"),
+            ts_type_to_rust_type("Array<number> | null", true),
+            Some("&Option<Vec<f64>>".to_owned())
+        );
+        assert_eq!(
+            ts_type_to_rust_type("Array<number> | null", false),
             Some("Option<Vec<f64>>".to_owned())
         );
     }
@@ -957,30 +1046,49 @@ mod tests {
     #[test]
     fn test_nullable_array_and_elements() {
         assert_eq!(
-            ts_type_to_rust_type("Array<string | null> | null"),
+            ts_type_to_rust_type("Array<string | null> | null", true),
+            Some("&Option<Vec<Option<String>>>".to_owned())
+        );
+        assert_eq!(
+            ts_type_to_rust_type("Array<string | null> | null", false),
             Some("Option<Vec<Option<String>>>".to_owned())
         );
     }
 
     #[test]
     fn test_fallback_for_union() {
-        assert_eq!(ts_type_to_rust_type("string | number"), None);
-        assert_eq!(ts_type_to_rust_type("string | number | null"), None);
+        assert_eq!(ts_type_to_rust_type("string | number", true), None);
+        assert_eq!(ts_type_to_rust_type("string | number", false), None);
+        assert_eq!(ts_type_to_rust_type("string | number | null", true), None);
+        assert_eq!(ts_type_to_rust_type("string | number | null", false), None);
     }
 
     #[test]
     fn test_unknown_types() {
-        assert_eq!(ts_type_to_rust_type("foo"), None);
+        assert_eq!(ts_type_to_rust_type("foo", true), None);
+        assert_eq!(ts_type_to_rust_type("foo", false), None);
         assert_eq!(
-            ts_type_to_rust_type("any"),
+            ts_type_to_rust_type("any", true),
+            Some("&serde_json::Value".to_owned())
+        );
+        assert_eq!(
+            ts_type_to_rust_type("any", false),
             Some("serde_json::Value".to_owned())
         );
         assert_eq!(
-            ts_type_to_rust_type("object"),
+            ts_type_to_rust_type("object", true),
+            Some("&serde_json::Value".to_owned())
+        );
+        assert_eq!(
+            ts_type_to_rust_type("object", false),
             Some("serde_json::Value".to_owned())
         );
         assert_eq!(
-            ts_type_to_rust_type("unknown"),
+            ts_type_to_rust_type("unknown", true),
+            Some("&serde_json::Value".to_owned())
+        );
+        assert_eq!(
+            ts_type_to_rust_type("unknown", false),
             Some("serde_json::Value".to_owned())
         );
     }
@@ -988,11 +1096,19 @@ mod tests {
     #[test]
     fn test_extra_whitespace() {
         assert_eq!(
-            ts_type_to_rust_type("  string | null  "),
+            ts_type_to_rust_type("  string | null  ", true),
+            Some("&Option<String>".to_owned())
+        );
+        assert_eq!(
+            ts_type_to_rust_type("  string | null  ", false),
             Some("Option<String>".to_owned())
         );
         assert_eq!(
-            ts_type_to_rust_type(" Array< string > "),
+            ts_type_to_rust_type(" Array< string > ", true),
+            Some("&[String]".to_owned())
+        );
+        assert_eq!(
+            ts_type_to_rust_type(" Array< string > ", false),
             Some("Vec<String>".to_owned())
         );
     }
@@ -1000,32 +1116,56 @@ mod tests {
     #[test]
     fn test_map_types() {
         assert_eq!(
-            ts_type_to_rust_type("Map<string, number>"),
-            Some("HashMap<String, f64>".to_string())
+            ts_type_to_rust_type("Map<string, number>", true),
+            Some("&HashMap<String, f64>".to_owned())
         );
         assert_eq!(
-            ts_type_to_rust_type("Map<string, boolean>"),
-            Some("HashMap<String, bool>".to_string())
+            ts_type_to_rust_type("Map<string, number>", false),
+            Some("HashMap<String, f64>".to_owned())
         );
         assert_eq!(
-            ts_type_to_rust_type("Map<number, string>"),
-            Some("HashMap<f64, String>".to_string())
+            ts_type_to_rust_type("Map<string, boolean>", true),
+            Some("&HashMap<String, bool>".to_owned())
+        );
+        assert_eq!(
+            ts_type_to_rust_type("Map<string, boolean>", false),
+            Some("HashMap<String, bool>".to_owned())
+        );
+        assert_eq!(
+            ts_type_to_rust_type("Map<number, string>", true),
+            Some("&HashMap<f64, String>".to_owned())
+        );
+        assert_eq!(
+            ts_type_to_rust_type("Map<number, string>", false),
+            Some("HashMap<f64, String>".to_owned())
         );
     }
 
     #[test]
     fn test_set_types() {
         assert_eq!(
-            ts_type_to_rust_type("Set<string>"),
-            Some("HashSet<String>".to_string())
+            ts_type_to_rust_type("Set<string>", true),
+            Some("&HashSet<String>".to_owned())
         );
         assert_eq!(
-            ts_type_to_rust_type("Set<number>"),
-            Some("HashSet<f64>".to_string())
+            ts_type_to_rust_type("Set<string>", false),
+            Some("HashSet<String>".to_owned())
         );
         assert_eq!(
-            ts_type_to_rust_type("Set<boolean>"),
-            Some("HashSet<bool>".to_string())
+            ts_type_to_rust_type("Set<number>", true),
+            Some("&HashSet<f64>".to_owned())
+        );
+        assert_eq!(
+            ts_type_to_rust_type("Set<number>", false),
+            Some("HashSet<f64>".to_owned())
+        );
+        assert_eq!(
+            ts_type_to_rust_type("Set<boolean>", true),
+            Some("&HashSet<bool>".to_owned())
+        );
+        assert_eq!(
+            ts_type_to_rust_type("Set<boolean>", false),
+            Some("HashSet<bool>".to_owned())
         );
     }
 }
