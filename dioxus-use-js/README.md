@@ -1,6 +1,6 @@
 # `dioxus-use-js`
 
-A macro that generates Rust bindings to JavaScript or TypeScript functions, with compile time checks. For use with [`Dioxus`](https://github.com/DioxusLabs/dioxus). No need to use [eval](https://docs.rs/dioxus-document/latest/dioxus_document/fn.eval.html) directly anymore.
+A macro that generates Rust bindings to JavaScript or TypeScript functions, with compile time checks. For use with [`Dioxus`](https://github.com/DioxusLabs/dioxus). No need to use [eval](https://docs.rs/dioxus-document/latest/dioxus_document/fn.eval.html) directly anymore!
 Works across all `eval` supported platforms (**Web**, **Desktop**, **Mobile**, and **liveview**) — no `wasm-bindgen` required.
 
 ---
