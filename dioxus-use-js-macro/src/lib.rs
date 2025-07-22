@@ -813,9 +813,9 @@ fn generate_function_wrapper(func: &FunctionInfo, asset_path: &LitStr) -> TokenS
                 let RustCallback { input, output } = rust_callback;
                 match (input, output) {
                     (None, None) => {
-                        // Signal call, no input or output
+                        // no return, but still need to await ack
                         format!(
-                            "const {} = async () => {{{{ dioxus.send([{}, null]); }}}};",
+                            "const {} = async () => {{{{ dioxus.send([{}, null]); await dioxus.recv(); }}}};",
                             name, index
                         )
                     },
@@ -827,8 +827,9 @@ fn generate_function_wrapper(func: &FunctionInfo, asset_path: &LitStr) -> TokenS
                         )
                     },
                     (Some(_), None) => {
+                        // no return, but still need to await ack
                         format!(
-                            "const {} = async (value) => {{{{ dioxus.send([{}, value]); }}}};",
+                            "const {} = async (value) => {{{{ dioxus.send([{}, value]); await dioxus.recv(); }}}};",
                             name, index
                         )
                     },
@@ -981,11 +982,14 @@ ___result___ = undefined;
                     }
                 };
                 let callback_send_back = if callback.output.is_some() {
-                    Some(quote! {
+                    quote! {
                         eval.send(value).map_err(dioxus_use_js::JsError::Eval)?;
-                    })
+                    }
                 } else {
-                    None
+                    // send ack
+                    quote! {
+                        eval.send(dioxus_use_js::SerdeJsonValue::Null).map_err(dioxus_use_js::JsError::Eval)?;
+                    }
                 };
                 quote! {
                     #index => {
