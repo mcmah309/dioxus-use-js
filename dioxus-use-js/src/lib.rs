@@ -25,6 +25,19 @@ pub const __BAD_CALL_MSG: &str = "Should only attempt to call known actions.";
 
 //************************************************************************//
 
+fn _send_sync_error_assert() {
+    fn is_send<T: Send>(_: &T) {}
+    fn is_sync<T: Sync>(_: &T) {}
+    fn is_error<T: Error>(_: &T) {}
+
+    let o: JsError =
+        JsError::Callback(Box::new(std::io::Error::new(std::io::ErrorKind::Other, ""))
+            as Box<dyn Error + Send + Sync>);
+    is_send(&o);
+    is_sync(&o);
+    is_error(&o);
+}
+
 /// An error related to the execution of a javascript operation
 #[derive(Debug)]
 pub enum JsError {
