@@ -34,7 +34,7 @@ async fn greeting(from: impl Serialize, to: impl Serialize) -> Result<Value, JsE
 Use it like:
 
 ```rust,ignore
-let val = greeting("Alice", "Bob").await?;
+let val: Value = greeting("Alice", "Bob").await?;
 let s: String = serde_json::from_value(val)?;
 ```
 
@@ -97,9 +97,9 @@ use_js!("source.ts", "bundle.js"::*);
 | TypeScript            | Rust Input       | Rust Output       |
 | --------------------- | ---------------- | ----------------- |
 | `string`              | `&str`           | `String`          |
-| `number`              | `&f64`           | `f64`             |
-| `boolean`             | `&bool`          | `bool`            |
-| `T \| null`           | `&Option<T>`     | `Option<T>`       |
+| `number`              | `f64`           | `f64`             |
+| `boolean`             | `bool`          | `bool`            |
+| `T \| null`           | `Option<&T>`     | `Option<T>`       |
 | `T[]`                 | `&[T]`           | `Vec<T>`          |
 | `Map<T, TT>`          | `&HashMap<T, TT>`| `HashMap<T, TT>`   |
 | `Set<T>`              | `&HashSet<T>`    | `HashSet<T>`    |
@@ -218,8 +218,8 @@ export async function useCallback(
 
 ```rust,ignore
 pub async fn useCallback(
-    startingValue: &f64,
-    mut callback: impl AsyncFnMut(f64) -> Result<f64, Box<dyn Error>>,
+    startingValue: f64,
+    mut callback: impl AsyncFnMut(f64) -> Result<f64, Box<dyn Error + Send + Sync>>,
 ) -> Result<f64, JsError>;
 ```
 
@@ -231,7 +231,7 @@ let callback_example: Resource<Result<f64, JsError>> = use_resource(|| async mov
     let callback = async |value: f64| Ok(value * 2.0);
 
     // Pass it into the JS function
-    let value = useCallback(&2.0, callback).await?;
+    let value = useCallback(2.0, callback).await?;
     Ok(value)
 });
 ```

@@ -246,20 +246,10 @@ fn ts_type_to_rust_type(ts_type: Option<&str>, is_input: bool) -> RustType {
             panic!("Invalid RustCallback type: {}", ts_type);
         }
     }
-    match ts_type_to_rust_type_helper(ts_type, is_input, true) {
-        Some(value) => {
-            if is_input && value != SERDE_INPUT {
-                assert!(
-                    !value.starts_with("&"),
-                    "helper function should not return a reference"
-                );
-                RustType::Regular(format!("&{}", value))
-            } else {
-                RustType::Regular(value)
-            }
-        }
-        None => RustType::Regular((if is_input { SERDE_INPUT } else { SERDE_OUTPUT }).to_owned()),
-    }
+    RustType::Regular(match ts_type_to_rust_type_helper(ts_type, is_input, true) {
+        Some(value) => value,
+        None => (if is_input { SERDE_INPUT } else { SERDE_OUTPUT }).to_owned(),
+    })
 }
 
 /// Simple converter, needs null in the second position to enable Option, handles regular ts types.
@@ -275,7 +265,7 @@ fn ts_type_to_rust_type_helper(mut ts_type: &str, is_input: bool, is_root: bool)
         // Handle single null union: T | null or null | T
         if parts.len() == 2 && parts.contains(&"null") {
             let inner = parts.iter().find(|p| **p != "null")?;
-            let inner_rust = ts_type_to_rust_type_helper(inner, is_input, false)?;
+            let inner_rust = ts_type_to_rust_type_helper(inner, is_input, is_root)?;
             return Some(format!("Option<{}>", inner_rust));
         }
         // Unsupported union type
@@ -288,7 +278,7 @@ fn ts_type_to_rust_type_helper(mut ts_type: &str, is_input: bool, is_root: bool)
         let inner = ts_type.strip_suffix("[]").unwrap();
         let inner_rust = ts_type_to_rust_type_helper(inner, is_input, false)?;
         return Some(if is_input && is_root {
-            format!("[{}]", inner_rust)
+            format!("&[{}]", inner_rust)
         } else {
             format!("Vec<{}>", inner_rust)
         });
@@ -298,7 +288,7 @@ fn ts_type_to_rust_type_helper(mut ts_type: &str, is_input: bool, is_root: bool)
         let inner = &ts_type[6..ts_type.len() - 1];
         let inner_rust = ts_type_to_rust_type_helper(inner, is_input, false)?;
         return Some(if is_input && is_root {
-            format!("[{}]", inner_rust)
+            format!("&[{}]", inner_rust)
         } else {
             format!("Vec<{}>", inner_rust)
         });
@@ -307,7 +297,11 @@ fn ts_type_to_rust_type_helper(mut ts_type: &str, is_input: bool, is_root: bool)
     if ts_type.starts_with("Set<") && ts_type.ends_with(">") {
         let inner = &ts_type[4..ts_type.len() - 1];
         let inner_rust = ts_type_to_rust_type_helper(inner, is_input, false)?;
-        return Some(format!("std::collections::HashSet<{}>", inner_rust));
+        if is_input && is_root {
+            return Some(format!("&std::collections::HashSet<{}>", inner_rust));
+        } else {
+            return Some(format!("std::collections::HashSet<{}>", inner_rust));
+        }
     }
 
     if ts_type.starts_with("Map<") && ts_type.ends_with(">") {
@@ -331,10 +325,17 @@ fn ts_type_to_rust_type_helper(mut ts_type: &str, is_input: bool, is_root: bool)
             let value = &value[1..]; // skip comma
             let key_rust = ts_type_to_rust_type_helper(key.trim(), is_input, false)?;
             let value_rust = ts_type_to_rust_type_helper(value.trim(), is_input, false)?;
-            return Some(format!(
-                "std::collections::HashMap<{}, {}>",
-                key_rust, value_rust
-            ));
+            if is_input && is_root {
+                return Some(format!(
+                    "&std::collections::HashMap<{}, {}>",
+                    key_rust, value_rust
+                ));
+            } else {
+                return Some(format!(
+                    "std::collections::HashMap<{}, {}>",
+                    key_rust, value_rust
+                ));
+            }
         } else {
             return None;
         }
@@ -351,7 +352,7 @@ fn ts_type_to_rust_type_helper(mut ts_type: &str, is_input: bool, is_root: bool)
     let rust_type = match ts_type {
         "string" => {
             if is_input && is_root {
-                "str"
+                "&str"
             } else {
                 "String"
             }
@@ -1160,7 +1161,7 @@ mod tests {
         );
         assert_eq!(
             ts_type_to_rust_type(Some("number"), true).to_string(),
-            "&f64"
+            "f64"
         );
         assert_eq!(
             ts_type_to_rust_type(Some("boolean"), false).to_string(),
@@ -1168,7 +1169,7 @@ mod tests {
         );
         assert_eq!(
             ts_type_to_rust_type(Some("boolean"), true).to_string(),
-            "&bool"
+            "bool"
         );
         assert_eq!(
             ts_type_to_rust_type(Some("object"), false).to_string(),
@@ -1184,7 +1185,7 @@ mod tests {
     fn test_nullable_primitives() {
         assert_eq!(
             ts_type_to_rust_type(Some("string | null"), true).to_string(),
-            "&Option<String>"
+            "Option<&str>"
         );
         assert_eq!(
             ts_type_to_rust_type(Some("string | null"), false).to_string(),
@@ -1192,7 +1193,7 @@ mod tests {
         );
         assert_eq!(
             ts_type_to_rust_type(Some("number | null"), true).to_string(),
-            "&Option<f64>"
+            "Option<f64>"
         );
         assert_eq!(
             ts_type_to_rust_type(Some("number | null"), false).to_string(),
@@ -1200,7 +1201,7 @@ mod tests {
         );
         assert_eq!(
             ts_type_to_rust_type(Some("boolean | null"), true).to_string(),
-            "&Option<bool>"
+            "Option<bool>"
         );
         assert_eq!(
             ts_type_to_rust_type(Some("boolean | null"), false).to_string(),
@@ -1252,7 +1253,7 @@ mod tests {
     fn test_nullable_array_itself() {
         assert_eq!(
             ts_type_to_rust_type(Some("string[] | null"), true).to_string(),
-            "&Option<Vec<String>>"
+            "Option<&[String]>"
         );
         assert_eq!(
             ts_type_to_rust_type(Some("string[] | null"), false).to_string(),
@@ -1260,7 +1261,7 @@ mod tests {
         );
         assert_eq!(
             ts_type_to_rust_type(Some("Array<number> | null"), true).to_string(),
-            "&Option<Vec<f64>>"
+            "Option<&[f64]>"
         );
         assert_eq!(
             ts_type_to_rust_type(Some("Array<number> | null"), false).to_string(),
@@ -1272,7 +1273,7 @@ mod tests {
     fn test_nullable_array_and_elements() {
         assert_eq!(
             ts_type_to_rust_type(Some("Array<string | null> | null"), true).to_string(),
-            "&Option<Vec<Option<String>>>"
+            "Option<&[Option<String>]>"
         );
         assert_eq!(
             ts_type_to_rust_type(Some("Array<string | null> | null"), false).to_string(),
@@ -1340,7 +1341,7 @@ mod tests {
     fn test_extra_whitespace() {
         assert_eq!(
             ts_type_to_rust_type(Some("  string | null  "), true).to_string(),
-            "&Option<String>"
+            "Option<&str>"
         );
         assert_eq!(
             ts_type_to_rust_type(Some("  string | null  "), false).to_string(),

@@ -37,7 +37,7 @@ fn App() -> Element {
         // The value is kept on the js side and a reference to it is kept on the rust side.
         // The value is automatically disposed when all rust references no longer exist.
         let js_value = createJsObject().await?;
-        let output = useJsObject(&2.0, &js_value).await?;
+        let output = useJsObject(2.0, &js_value).await?;
         // Since `js_value` is dropped here and all references no longer exist,
         // the referenced value will be disposed on the js side.
         Ok(output)
@@ -46,12 +46,17 @@ fn App() -> Element {
     let callback1_example: Resource<Result<f64, JsError>> = use_resource(|| async move {
         // Rust side closure callable from javascript
         let callback = async |value: f64| Ok(value * 2.0);
-        let output = useCallback1(&2.0, callback).await?;
+        let output = useCallback1(2.0, callback).await?;
         Ok(output)
     });
 
-    let callback2_example: Resource<Result<f64, JsError>> = use_resource(|| async move {
-        let callback = async || Ok(30.0);
+    let mut call = use_signal(|| 5);
+
+    let callback2_example: Resource<Result<f64, JsError>> = use_resource(move || async move {
+        let callback = async || {
+            call += 1;
+            Ok(30.0)
+        };
         let output = useCallback2(callback).await?;
         Ok(output)
     });
@@ -63,7 +68,7 @@ fn App() -> Element {
             );
             Ok(())
         };
-        let output = useCallback3(&4.0, callback).await?;
+        let output = useCallback3(4.0, callback).await?;
         Ok(output)
     });
 
@@ -72,11 +77,12 @@ fn App() -> Element {
             dioxus::logger::tracing::trace!("Callback4 was called on the rust side with no value");
             Ok(())
         };
-        let output = useCallback4(&10.0, callback).await?;
+        let output = useCallback4(10.0, callback).await?;
         Ok(output)
     });
 
     rsx!(
+        "call is {call}",
         main { style: "padding: 2rem; font-family: sans-serif; line-height: 1.6;",
             h1 { "Dioxus `use_js!` Macro Example" }
 
