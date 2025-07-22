@@ -29,7 +29,7 @@ pub const __BAD_CALL_MSG: &str = "Should only attempt to call known actions.";
 #[derive(Debug)]
 pub enum JsError {
     Eval(dioxus::document::EvalError),
-    Callback(Box<dyn Error>),
+    Callback(Box<dyn Error + Send + Sync>),
 }
 
 impl std::fmt::Display for JsError {

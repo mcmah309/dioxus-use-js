@@ -183,7 +183,7 @@ impl ToString for RustType {
                 let input = callback.input.as_deref();
                 let output = callback.output.as_deref().unwrap_or("()");
                 format!(
-                    "impl AsyncFnMut({}) -> Result<{}, Box<dyn std::error::Error>>",
+                    "impl AsyncFnMut({}) -> Result<{}, Box<dyn std::error::Error + Send + Sync>>",
                     input.unwrap_or_default(),
                     output
                 )
@@ -1416,19 +1416,19 @@ mod tests {
     fn test_rust_callback() {
         assert_eq!(
             ts_type_to_rust_type(Some("RustCallback<number,string>"), true).to_string(),
-            "impl AsyncFnMut(f64) -> Result<String, Box<dyn std::error::Error>>"
+            "impl AsyncFnMut(f64) -> Result<String, Box<dyn std::error::Error + Send + Sync>>"
         );
         assert_eq!(
             ts_type_to_rust_type(Some("RustCallback<void,string>"), true).to_string(),
-            "impl AsyncFnMut() -> Result<String, Box<dyn std::error::Error>>"
+            "impl AsyncFnMut() -> Result<String, Box<dyn std::error::Error + Send + Sync>>"
         );
         assert_eq!(
             ts_type_to_rust_type(Some("RustCallback<void,void>"), true).to_string(),
-            "impl AsyncFnMut() -> Result<(), Box<dyn std::error::Error>>"
+            "impl AsyncFnMut() -> Result<(), Box<dyn std::error::Error + Send + Sync>>"
         );
         assert_eq!(
             ts_type_to_rust_type(Some("RustCallback<number,void>"), true).to_string(),
-            "impl AsyncFnMut(f64) -> Result<(), Box<dyn std::error::Error>>"
+            "impl AsyncFnMut(f64) -> Result<(), Box<dyn std::error::Error + Send + Sync>>"
         );
     }
 
