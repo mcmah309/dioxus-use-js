@@ -49,6 +49,10 @@ fn App() -> Element {
         let callback = async |value: f64| {
             callback1_signal
                 .write()
+                .replace_range(.., "Callback1 called! Sleeping...");
+            let _ = sleep(1000.0).await;
+            callback1_signal
+                .write()
                 .replace_range(.., "Callback1 called!");
             Ok(value * 2.0)
         };
@@ -59,6 +63,10 @@ fn App() -> Element {
     let mut callback2_signal = use_signal(|| "Callback2 not yet called :(".to_owned());
     let callback2_example: Resource<Result<f64, JsError>> = use_resource(move || async move {
         let callback = async || {
+            callback2_signal
+                .write()
+                .replace_range(.., "Callback2 called! Sleeping...");
+            let _ = sleep(1000.0).await;
             callback2_signal
                 .write()
                 .replace_range(.., "Callback2 called!");
@@ -73,6 +81,10 @@ fn App() -> Element {
         let callback = async |_: f64| {
             callback3_signal
                 .write()
+                .replace_range(.., "Callback3 called! Sleeping...");
+            let _ = sleep(1000.0).await;
+            callback3_signal
+                .write()
                 .replace_range(.., "Callback3 called!");
             Ok(())
         };
@@ -83,6 +95,10 @@ fn App() -> Element {
     let mut callback4_signal = use_signal(|| "Callback4 not yet called :(".to_owned());
     let callback4_example: Resource<Result<f64, JsError>> = use_resource(move || async move {
         let callback = async || {
+            callback4_signal
+                .write()
+                .replace_range(.., "Callback4 called! Sleeping...");
+            let _ = sleep(1000.0).await;
             callback4_signal
                 .write()
                 .replace_range(.., "Callback4 called!");

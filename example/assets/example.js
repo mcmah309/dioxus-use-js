@@ -5,6 +5,10 @@ export function greeting(from, to) {
     return `Hello ${to}, this is ${from} speaking from JavaScript!`;
 }
 
+export async function sleep(ms) {
+    return new Promise(resolve => setTimeout(resolve, ms))
+}
+
 /// Creates a js value that is not serialized
 export function createJsObject() {
     return {
