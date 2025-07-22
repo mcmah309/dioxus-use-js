@@ -5,7 +5,7 @@ type JsValue<T = any> = T;
 
 // input of void means takes no arguments
 // output of void means it returns no arguments
-type RustCallback<A = any, R = any> = (arg: A) => Promise<R>;
+type RustCallback<A, R> = (arg: A) => Promise<R>;
 
 
 

@@ -113,6 +113,10 @@ use_js!("source.ts", "bundle.js"::*);
 
 This special TypeScript type signals to the macro to **bypass serialization** and pass native JS values as opaque references between Rust and JavaScript. The macro generates the glue code required. The JS value is automatically disposed when all references on the Rust side go out of scope.
 
+```ts
+type JsValue<T = any> = T;
+```
+
 ### Example Usage
 
 **TypeScript:**
@@ -152,12 +156,19 @@ pub async fn useJsObject(value: &JsValue) -> Result<f64, JsError>;
 
 This special TypeScript type signals to the macro that a **Rust async closure** will be passed into the JavaScript function. The macro generates the glue code required. This enables advanced interop patterns, such as calling Rust logic from within JS — all while preserving type safety.
 
+```ts
+type RustCallback<A, R> = (arg: A) => Promise<R>;
+```
+
+If input `A` is `void` then the Rust closure will take no input.
+If output `R` is `void` then the Rust closure will return no output.
+
 ### Example Usage
 
 **TypeScript:**
 
 ```ts
-type RustCallback<A = any, R = any> = (arg: A) => Promise<R>;
+type RustCallback<A, R> = (arg: A) => Promise<R>;
 
 export async function useCallback(
   startingValue: number,

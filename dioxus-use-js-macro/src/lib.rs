@@ -218,14 +218,14 @@ fn ts_type_to_rust_type(ts_type: Option<&str>, is_input: bool) -> RustType {
         }
     }
     if ts_type.starts_with(RUST_CALLBACK_JS_START) {
-        assert!(is_input, "Cannot return a Rust callback: {}", ts_type);
+        assert!(is_input, "Cannot return a RustCallback: {}", ts_type);
         let ts_type = &ts_type[RUST_CALLBACK_JS_START.len()..];
         if ts_type.starts_with("<") && ts_type.ends_with(">") {
             let inner = &ts_type[1..ts_type.len() - 1];
             let parts = inner.split(",").collect::<Vec<&str>>();
             let len = parts.len();
-            if len > 2 || len == 0 {
-                panic!("Invalid Rust callback type param: {}", inner);
+            if len != 2 {
+                panic!("A RustCallback type expects two parameters, got: {}", inner);
             }
             let input = parts[0].trim();
             let input = if input == "void" {
@@ -235,25 +235,15 @@ fn ts_type_to_rust_type(ts_type: Option<&str>, is_input: bool) -> RustType {
                 ts_type_to_rust_type_helper(parts[0].trim(), false, true)
             };
             // `RustCallback<T>` or `RustCallback<T,TT>`
-            let output = if len == 2 {
-                let output = parts[1].trim();
-                if output == "void" {
-                    None
-                } else {
-                    ts_type_to_rust_type_helper(parts[1].trim(), false, true)
-                }
-            } else {
+            let output = parts[1].trim();
+            let output = if output == "void" {
                 None
+            } else {
+                ts_type_to_rust_type_helper(parts[1].trim(), false, true)
             };
             return RustType::CallBack(RustCallback { input, output });
-            // `RustCallback`
-        } else if ts_type.is_empty() {
-            return RustType::CallBack(RustCallback {
-                input: None,
-                output: None,
-            });
         } else {
-            panic!("Invalid Rust callback type: {}", ts_type);
+            panic!("Invalid RustCallback type: {}", ts_type);
         }
     }
     match ts_type_to_rust_type_helper(ts_type, is_input, true) {
@@ -896,8 +886,7 @@ const {{{{ {js_func_name} }}}} = await import("{{}}");
             let type_tokens = param.rust_type.to_tokens();
             if let RustType::CallBack(_) = param.rust_type {
                 quote! { mut #param_name: #type_tokens }
-            }
-            else {
+            } else {
                 quote! { #param_name: #type_tokens }
             }
         })
@@ -1423,12 +1412,16 @@ mod tests {
             "impl AsyncFnMut(f64) -> Result<String, Box<dyn std::error::Error>>"
         );
         assert_eq!(
-            ts_type_to_rust_type(Some("RustCallback<number>"), true).to_string(),
-            "impl AsyncFnMut(f64) -> Result<(), Box<dyn std::error::Error>>"
+            ts_type_to_rust_type(Some("RustCallback<void,string>"), true).to_string(),
+            "impl AsyncFnMut() -> Result<String, Box<dyn std::error::Error>>"
         );
         assert_eq!(
-            ts_type_to_rust_type(Some("RustCallback"), true).to_string(),
+            ts_type_to_rust_type(Some("RustCallback<void,void>"), true).to_string(),
             "impl AsyncFnMut() -> Result<(), Box<dyn std::error::Error>>"
+        );
+        assert_eq!(
+            ts_type_to_rust_type(Some("RustCallback<number,void>"), true).to_string(),
+            "impl AsyncFnMut(f64) -> Result<(), Box<dyn std::error::Error>>"
         );
     }
 
