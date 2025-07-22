@@ -23,8 +23,6 @@ pub const __BAD_CALL_MSG: &str = "Should only attempt to call known actions.";
 // pub use dioxus::document::eval as dioxus_document_eval;
 // pub use dioxus::document::EvalError as DioxusEvalError;
 
-
-
 //************************************************************************//
 
 /// An error related to the execution of a javascript operation
@@ -47,9 +45,33 @@ impl std::error::Error for JsError {}
 
 //************************************************************************//
 
+pub trait EvalResultExt {
+    fn deserialize<T: serde::de::DeserializeOwned>(self) -> Result<T, JsError>;
+}
+
+impl EvalResultExt for Result<serde_json::Value, JsError> {
+    fn deserialize<T: serde::de::DeserializeOwned>(self) -> Result<T, JsError> {
+        self.and_then(|v| {
+            serde_json::from_value(v)
+                .map_err(|e| JsError::Eval(dioxus::document::EvalError::Serialization(e)))
+        })
+    }
+}
+
+impl EvalResultExt for Result<serde_json::Value, dioxus::document::EvalError> {
+    fn deserialize<T: serde::de::DeserializeOwned>(self) -> Result<T, JsError> {
+        self.map_err(JsError::Eval).and_then(|v| {
+            serde_json::from_value(v)
+                .map_err(|e| JsError::Eval(dioxus::document::EvalError::Serialization(e)))
+        })
+    }
+}
+
+//************************************************************************//
+
 /// A reference to a javascript value that can be held on the dioxus side and passed to functions generated
 /// by this crate.
-/// 
+///
 /// An instance of this is created or used by e.g.
 /// ```rust,ignore
 /// dioxus_use_js::use_js!("ts/example.ts", "assets/example.js"::usingJsValue);
@@ -58,7 +80,7 @@ impl std::error::Error for JsError {}
 /// ```ts
 /// type JsValue<T = any> = T;
 /// ```
-/// 
+///
 /// This uses `Arc` internally and the value on the js side is destroyed when the last reference is dropped
 // Dev Note: No `serde::Serialize` or `serde::Deserialize` on purpose since the value is destroyed when dropped
 #[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
