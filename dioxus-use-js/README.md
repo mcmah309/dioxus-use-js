@@ -178,6 +178,22 @@ type RustCallback<A, R> = (arg: A) => Promise<R>;
 If input `A` is `void` then the Rust closure will take no input.
 If output `R` is `void` then the Rust closure will return no output.
 
+> **Note:** On the Javascript side, within the same exported function invocation, do not call another callback before the previous callback has completed. Otherwise, the returned values from Rust may go to the wrong callback. 
+> 
+> Bad:
+> ```ts
+> let promise1 = callback();
+> let promise2 = callback();
+> ```
+> Good:
+> ```ts
+> let value1 = await callback();
+> let value2 = await callback();
+> ```
+> The obvious exception to this is if none or only one of the callbacks in process return a value, then this is fine.
+
+    
+
 ### Example Usage
 
 **TypeScript:**
