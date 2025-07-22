@@ -103,13 +103,14 @@ use_js!("source.ts", "bundle.js"::*);
 | `T[]`                 | `&[T]`           | `Vec<T>`          |
 | `Map<T, TT>`          | `&HashMap<T, TT>`| `HashMap<T, TT>`   |
 | `Set<T>`              | `&HashSet<T>`    | `HashSet<T>`    |
-| `any`, `unknown`, no type, invalid type      | `impl serde::Serialize` | `serde_json::Value`|
+| `any`, `unknown`, `object`     | `impl serde::Serialize` | `serde_json::Value`|
 | `JsValue<T>`             | `&JsValue`       | `JsValue`         |
 | `JsValue`             | `&JsValue`       | `JsValue`         |
 | `RustCallback<T,TT>`     | `impl AsyncFnMut(T) -> Result<TT, Box<dyn Error>>` | `-`|
 | `RustCallback<void,TT>`     | `impl AsyncFnMut() -> Result<TT, Box<dyn Error>>` | `-`|
 | `RustCallback<T,void>`     | `impl AsyncFnMut(T) -> Result<(), Box<dyn Error>>` | `-`|
 | `RustCallback<void,void>`     | `impl AsyncFnMut() -> Result<(), Box<dyn Error>>` | `-`|
+| `-`     | `impl serde::Serialize` | `serde_json::Value`|
 
 ---
 
