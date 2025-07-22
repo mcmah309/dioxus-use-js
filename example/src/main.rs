@@ -49,7 +49,7 @@ fn App() -> Element {
         let callback = async |value: f64| {
             callback1_signal
                 .write()
-                .replace_range(.., "Callback1 called! Sleeping...");
+                .replace_range(.., "Callback1 called! Sleeping for 1 second...");
             let _ = sleep(1000.0).await;
             callback1_signal
                 .write()
@@ -65,7 +65,7 @@ fn App() -> Element {
         let callback = async || {
             callback2_signal
                 .write()
-                .replace_range(.., "Callback2 called! Sleeping...");
+                .replace_range(.., "Callback2 called! Sleeping for 1 second...");
             let _ = sleep(1000.0).await;
             callback2_signal
                 .write()
@@ -81,7 +81,7 @@ fn App() -> Element {
         let callback = async |_: f64| {
             callback3_signal
                 .write()
-                .replace_range(.., "Callback3 called! Sleeping...");
+                .replace_range(.., "Callback3 called! Sleeping for 1 second...");
             let _ = sleep(1000.0).await;
             callback3_signal
                 .write()
@@ -97,7 +97,7 @@ fn App() -> Element {
         let callback = async || {
             callback4_signal
                 .write()
-                .replace_range(.., "Callback4 called! Sleeping...");
+                .replace_range(.., "Callback4 called! Sleeping for 1 second...");
             let _ = sleep(1000.0).await;
             callback4_signal
                 .write()
