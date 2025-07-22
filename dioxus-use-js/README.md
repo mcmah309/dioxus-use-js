@@ -1,6 +1,6 @@
 # `dioxus-use-js`
 
-A macro generates Rust bindings to JavaScript or TypeScript functions, with compile time checks. For use with [`Dioxus`](https://github.com/DioxusLabs/dioxus).
+A macro that generates Rust bindings to JavaScript or TypeScript functions, with compile time checks. For use with [`Dioxus`](https://github.com/DioxusLabs/dioxus).
 Works across **Web**, **Desktop**, and **Mobile** — no `wasm-bindgen` required.
 
 ---
