@@ -814,26 +814,26 @@ fn generate_function_wrapper(func: &FunctionInfo, asset_path: &LitStr) -> TokenS
                     (None, None) => {
                         // Signal call, no input or output
                         format!(
-                            "let {} = async () => {{{{ dioxus.send([{}, null]); }}}};",
+                            "const {} = async () => {{{{ dioxus.send([{}, null]); }}}};",
                             name, index
                         )
                     },
                     (None, Some(_)) => {
                         format!(
-                            "let {} = async () => {{{{ dioxus.send([{}, null]); return await dioxus.recv(); }}}};",
+                            "const {} = async () => {{{{ dioxus.send([{}, null]); return await dioxus.recv(); }}}};",
                             name, index
 
                         )
                     },
                     (Some(_), None) => {
                         format!(
-                            "let {} = async (value) => {{{{ dioxus.send([{}, value]); }}}};",
+                            "const {} = async (value) => {{{{ dioxus.send([{}, value]); }}}};",
                             name, index
                         )
                     },
                     (Some(_), Some(_)) => {
                         format!(
-                            "let {} = async (value) => {{{{ dioxus.send([{}, value]); return await dioxus.recv(); }}}};",
+                            "const {} = async (value) => {{{{ dioxus.send([{}, value]); return await dioxus.recv(); }}}};",
                             name, index
                         )
                     },
@@ -850,7 +850,7 @@ fn generate_function_wrapper(func: &FunctionInfo, asset_path: &LitStr) -> TokenS
         format!(
             r#"
 const ___resultValue___ = {await_fn} {js_func_name}({params_list});
-const ___result___ = "js-value-" + crypto.randomUUID();
+___result___ = "js-value-" + crypto.randomUUID();
 window[___result___] = ___resultValue___;
         "#
         )
@@ -858,7 +858,7 @@ window[___result___] = ___resultValue___;
         // eval will fail if returning undefined. undefined happens if there is no return type
         format!(
             r#"
-const ___result___ = {await_fn} {js_func_name}({params_list});
+___result___ = {await_fn} {js_func_name}({params_list});
 "#
         )
     };
@@ -872,7 +872,14 @@ const ___result___ = {await_fn} {js_func_name}({params_list});
         r#"
 const {{{{ {js_func_name} }}}} = await import("{{}}");
 {param_declaration_lines}
+let ___result___;
+try {{{{
 {call_function}
+}}}}
+catch (e) {{{{
+console.error("Executing function `{js_func_name}` threw an error:", e);
+___result___ = undefined;
+}}}}
 {end_statement}
 "#
     );
