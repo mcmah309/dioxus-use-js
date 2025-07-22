@@ -43,38 +43,49 @@ fn App() -> Element {
         Ok(output)
     });
 
-    let callback1_example: Resource<Result<f64, JsError>> = use_resource(|| async move {
+    let mut callback1_signal = use_signal(|| "Callback1 not yet called :(".to_owned());
+    let callback1_example: Resource<Result<f64, JsError>> = use_resource(move || async move {
         // Rust side closure callable from javascript
-        let callback = async |value: f64| Ok(value * 2.0);
+        let callback = async |value: f64| {
+            callback1_signal
+                .write()
+                .replace_range(.., "Callback1 called!");
+            Ok(value * 2.0)
+        };
         let output = useCallback1(2.0, callback).await?;
         Ok(output)
     });
 
-    let mut call = use_signal(|| 5);
-
+    let mut callback2_signal = use_signal(|| "Callback2 not yet called :(".to_owned());
     let callback2_example: Resource<Result<f64, JsError>> = use_resource(move || async move {
         let callback = async || {
-            call += 1;
+            callback2_signal
+                .write()
+                .replace_range(.., "Callback2 called!");
             Ok(30.0)
         };
         let output = useCallback2(callback).await?;
         Ok(output)
     });
 
-    let callback3_example: Resource<Result<f64, JsError>> = use_resource(|| async move {
-        let callback = async |value: f64| {
-            dioxus::logger::tracing::trace!(
-                "Callback3 was called on the rust side with value `{value}`"
-            );
+    let mut callback3_signal = use_signal(|| "Callback3 not yet called :(".to_owned());
+    let callback3_example: Resource<Result<f64, JsError>> = use_resource(move || async move {
+        let callback = async |_: f64| {
+            callback3_signal
+                .write()
+                .replace_range(.., "Callback3 called!");
             Ok(())
         };
         let output = useCallback3(4.0, callback).await?;
         Ok(output)
     });
 
-    let callback4_example: Resource<Result<f64, JsError>> = use_resource(|| async move {
+    let mut callback4_signal = use_signal(|| "Callback4 not yet called :(".to_owned());
+    let callback4_example: Resource<Result<f64, JsError>> = use_resource(move || async move {
         let callback = async || {
-            dioxus::logger::tracing::trace!("Callback4 was called on the rust side with no value");
+            callback4_signal
+                .write()
+                .replace_range(.., "Callback4 called!");
             Ok(())
         };
         let output = useCallback4(10.0, callback).await?;
@@ -82,7 +93,6 @@ fn App() -> Element {
     });
 
     rsx!(
-        "call is {call}",
         main { style: "padding: 2rem; font-family: sans-serif; line-height: 1.6;",
             h1 { "Dioxus `use_js!` Macro Example" }
 
@@ -103,28 +113,26 @@ fn App() -> Element {
             section {
                 h2 { "`RustCallback` Examples" }
                 div {
-                    h3 {
-                        "Input & Output Callback (expected 16):"
-                        {example_result(&callback1_example.read())}
-                    }
+                    h3 { "Input & Output Callback (expected 16):" }
+                    {example_result(&callback1_example.read())}
+                    small { "Signal: {callback1_signal}" }
                 }
                 div {
-                    h3 {
-                        "Output Only Callback (expected 60):"
-                        {example_result(&callback2_example.read())}
-                    }
+                    h3 { "Output Only Callback (expected 60):" }
+                    {example_result(&callback2_example.read())}
+                    small { "Signal: {callback2_signal}" }
                 }
 
                 div {
                     h3 { "Input Only Callback (expected 8):" }
                     {example_result(&callback3_example.read())}
-                    small { "Check logs for: 'Callback3 was called on the rust side with value `12`'" }
+                    small { "Signal: {callback3_signal}" }
                 }
 
                 div {
                     h3 { "No Input Or Output (expected 20):" }
                     {example_result(&callback4_example.read())}
-                    small { "Check logs for: 'Callback4 was called on the rust side with no value'" }
+                    small { "Signal: {callback4_signal}" }
                 }
             }
         }
