@@ -850,7 +850,7 @@ fn generate_function_wrapper(func: &FunctionInfo, asset_path: &LitStr) -> TokenS
         format!(
             r#"
 const ___resultValue___ = {await_fn} {js_func_name}({params_list});
-const ___result___ = crypto.randomUUID();
+const ___result___ = "js-value-" + crypto.randomUUID();
 window[___result___] = ___resultValue___;
         "#
         )
