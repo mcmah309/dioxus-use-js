@@ -152,6 +152,21 @@ pub async fn createJsObject() -> Result<JsValue, JsError>;
 pub async fn useJsObject(value: &JsValue) -> Result<f64, JsError>;
 ```
 
+**Usage:**
+
+```rust,ignore
+let js_value_example: Resource<Result<f64, JsError>> = use_resource(|| async move {
+    // No serialization!
+    // The value is kept on the js side and a reference to it is kept on the rust side.
+    // The value is automatically disposed when all rust references no longer exist.
+    let js_value = createJsObject().await?;
+    let output = useJsObject(&js_value).await?;
+    // Since `js_value` is dropped here and all references no longer exist,
+    // the referenced value will be disposed on the js side.
+    Ok(output)
+});
+```
+
 ## `RustCallback`: Passing Closures from Rust to JavaScript
 
 This special TypeScript type signals to the macro that a **Rust async closure** will be passed into the JavaScript function. The macro generates the glue code required. This enables advanced interop patterns, such as calling Rust logic from within JS — all while preserving type safety.
