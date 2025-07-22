@@ -58,7 +58,9 @@ fn App() -> Element {
 
     let callback3_example: Resource<Result<f64, JsError>> = use_resource(|| async move {
         let callback = async |value: f64| {
-            dioxus::logger::tracing::trace!("Callback3 was called on the rust side with value `{value}`");
+            dioxus::logger::tracing::trace!(
+                "Callback3 was called on the rust side with value `{value}`"
+            );
             Ok(())
         };
         let output = useCallback3(&4.0, callback).await?;
@@ -75,110 +77,64 @@ fn App() -> Element {
     });
 
     rsx!(
-        div {
-            h1 { "Dioxus `use_js!` macro example!" }
-            p {
-                "Simple function calling:"
-                {
-                    match &*function_calling_example.read() {
-                        Some(Ok(function_calling_example)) => rsx! {
-                            p { style: "color:green", "{function_calling_example}" }
-                        },
-                        Some(Err(e)) => rsx! {
-                            p { style: "color:red", "Error: {e}" }
-                        },
-                        None => rsx! {
-                            p { style: "color:blue", "Running js..." }
-                        },
-                    }
-                }
+        main { style: "padding: 2rem; font-family: sans-serif; line-height: 1.6;",
+            h1 { "Dioxus `use_js!` Macro Example" }
+
+            section {
+                h2 { "Simple JS Function Call" }
+                {example_result(&function_calling_example.read())}
             }
-            p {
-                "`JsValue` - object method calling:"
-                {
-                    match &*js_value_example.read() {
-                        Some(Ok(js_value_example)) => rsx! {
-                            p { style: "color:green", "{js_value_example}" }
-                        },
-                        Some(Err(e)) => rsx! {
-                            p { style: "color:red", "Error: {e}" }
-                        },
-                        None => rsx! {
-                            p { style: "color:blue", "Running js..." }
-                        },
-                    }
-                }
+
+            section {
+                h2 { "`JsValue`: Object Method Call" }
+                {example_result(&js_value_example.read())}
                 small {
-                    "Check the logs, you should also see something like 'Successfully dropped JsValue and cleaned up JavaScript object'"
+                    "Check logs for cleanup message: \
+                    'Successfully dropped JsValue and cleaned up JavaScript object'"
                 }
             }
-        }
-        p {
-            "`RustCallback`:"
-            p {
-                "Input Output Callback - Expected 16 got:"
-                {
-                    match &*callback1_example.read() {
-                        Some(Ok(callback_example)) => rsx! {
-                            p { style: "color:green", "{callback_example}" }
-                        },
-                        Some(Err(e)) => rsx! {
-                            p { style: "color:red", "Error: {e}" }
-                        },
-                        None => rsx! {
-                            p { style: "color:blue", "Running js..." }
-                        },
+
+            section {
+                h2 { "`RustCallback` Examples" }
+                div {
+                    h3 {
+                        "Input & Output Callback (expected 16):"
+                        {example_result(&callback1_example.read())}
                     }
                 }
-            }
-            p {
-                "Output Only Callback - Expected 60 got:"
-                {
-                    match &*callback2_example.read() {
-                        Some(Ok(callback_example)) => rsx! {
-                            p { style: "color:green", "{callback_example}" }
-                        },
-                        Some(Err(e)) => rsx! {
-                            p { style: "color:red", "Error: {e}" }
-                        },
-                        None => rsx! {
-                            p { style: "color:blue", "Running js..." }
-                        },
+                div {
+                    h3 {
+                        "Output Only Callback (expected 60):"
+                        {example_result(&callback2_example.read())}
                     }
                 }
-            }
-            p {
-                "Input Only Callback - Expected 8 and see logs for a tracing log of: 'Callback3 was called on the rust side with value `12`'"
-                {
-                    match &*callback3_example.read() {
-                        Some(Ok(callback_example)) => rsx! {
-                            p { style: "color:green", "{callback_example}" }
-                        },
-                        Some(Err(e)) => rsx! {
-                            p { style: "color:red", "Error: {e}" }
-                        },
-                        None => rsx! {
-                            p { style: "color:blue", "Running js..." }
-                        },
-                    }
+
+                div {
+                    h3 { "Input Only Callback (expected 8):" }
+                    {example_result(&callback3_example.read())}
+                    small { "Check logs for: 'Callback3 was called on the rust side with value `12`'" }
                 }
-            }
-            p {
-                "No Input Or Output Callback - Expected 20 and see logs for a tracing log of: 'Callback4 was called on the rust side with no value'"
-                {
-                    match &*callback4_example.read() {
-                        Some(Ok(callback_example)) => rsx! {
-                            p { style: "color:green", "{callback_example}" }
-                        },
-                        Some(Err(e)) => rsx! {
-                            p { style: "color:red", "Error: {e}" }
-                        },
-                        None => rsx! {
-                            p { style: "color:blue", "Running js..." }
-                        },
-                    }
+
+                div {
+                    h3 { "No Input Or Output (expected 20):" }
+                    {example_result(&callback4_example.read())}
+                    small { "Check logs for: 'Callback4 was called on the rust side with no value'" }
                 }
             }
         }
     )
+}
+
+fn example_result(result: &Option<Result<impl std::fmt::Display, JsError>>) -> Element {
+    match result {
+        Some(Ok(val)) => rsx!(
+            p { style: "color:green", "{val}" }
+        ),
+        Some(Err(e)) => rsx!(
+            p { style: "color:red", "Error: {e}" }
+        ),
+        None => rsx!(
+            p { style: "color:blue", "Running js..." }
+        ),
+    }
 }
