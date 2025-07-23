@@ -1,6 +1,7 @@
 # `dioxus-use-js`
-[![Crates.io Version](https://img.shields.io/crates/v/dioxus-use-js.svg)](https://crates.io/crates/dioxus-use-js)
-[![Test Status](https://github.com/mcmah309/dioxus-use-js/actions/workflows/rust.yml/badge.svg)](https://github.com/mcmah309/dioxus-use-js/actions/workflows/rust.yml)
+[<img alt="github" src="https://img.shields.io/badge/github-mcmah309/dioxus--use--js-8da0cb?style=for-the-badge&labelColor=555555&logo=github" height="20">](https://github.com/mcmah309/dioxus-use-js)
+[<img alt="crates.io" src="https://img.shields.io/crates/v/dioxus-use-js.svg?style=for-the-badge&color=fc8d62&logo=rust" height="20">](https://crates.io/crates/dioxus-use-js)
+[<img alt="test status" src="https://img.shields.io/github/actions/workflow/status/mcmah309/dioxus-use-js/rust.yml?branch=master&style=for-the-badge" height="20">](https://github.com/mcmah309/dioxus-use-js/actions/workflows/rust.yml)
 
 
 A macro that generates Rust bindings to JavaScript or TypeScript functions, with compile time checks. For use with [`Dioxus`](https://github.com/DioxusLabs/dioxus). No need to use [eval](https://docs.rs/dioxus-document/latest/dioxus_document/fn.eval.html) directly anymore!
