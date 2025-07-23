@@ -1,4 +1,7 @@
 # `dioxus-use-js`
+[![Crates.io Version](https://img.shields.io/crates/v/dioxus-use-js.svg)](https://crates.io/crates/dioxus-use-js)
+[![Test Status](https://github.com/mcmah309/dioxus-use-js/actions/workflows/rust.yml/badge.svg)](https://github.com/mcmah309/dioxus-use-js/actions/workflows/rust.yml)
+
 
 A macro that generates Rust bindings to JavaScript or TypeScript functions, with compile time checks. For use with [`Dioxus`](https://github.com/DioxusLabs/dioxus). No need to use [eval](https://docs.rs/dioxus-document/latest/dioxus_document/fn.eval.html) directly anymore!
 Works across all `eval` supported platforms (**Web**, **Desktop**, **Mobile**, and **liveview**) — no `wasm-bindgen` required.
