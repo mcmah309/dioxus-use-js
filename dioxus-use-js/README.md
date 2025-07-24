@@ -119,8 +119,6 @@ use_js!("source.ts", "bundle.js"::*);
 | `JsValue<T>`, `JsValue`              | `&JsValue`       | `JsValue`         |
 | `RustCallback<T,TT>`     | `impl AsyncFnMut(T) -> Result<TT, Box<dyn Error + Send + Sync>>` | `-`|
 | `RustCallback<void,TT>`     | `impl AsyncFnMut() -> Result<TT, Box<dyn Error + Send + Sync>>` | `-`|
-| `RustCallback<T,void>`     | `impl AsyncFnMut(T) -> Result<(), Box<dyn Error + Send + Sync>>` | `-`|
-| `RustCallback<void,void>`     | `impl AsyncFnMut() -> Result<(), Box<dyn Error + Send + Sync>>` | `-`|
 
 ---
 ## Special Types
