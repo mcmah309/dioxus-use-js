@@ -86,3 +86,12 @@ export async function untyped(input) {
 export function json(input: Json[]): Json[] {
     return input;
 }
+
+// Compile errors
+//************************************************************************//
+
+// export function nestedVoid(): void[] {
+//     return [];
+// }
+
+// export function inputVoid(input: void) {}

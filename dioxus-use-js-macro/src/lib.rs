@@ -374,8 +374,11 @@ fn ts_type_to_rust_type_helper(mut ts_type: &str, is_input: bool, is_root: bool)
         "void" | "undefined" | "never" | "null" => {
             if is_input {
                 panic!("`{}` is only valid as an output type", ts_type.to_owned());
-            } else {
+            } else if is_root {
                 "()"
+            } else {
+                // Would cause serialization errors since `serde_json::Value::Null` cannot be deserialized into `()`
+                panic!("`{}` is not valid as nested output type", ts_type.to_owned());
             }
         }
         JSON => SERDE_VALUE,
