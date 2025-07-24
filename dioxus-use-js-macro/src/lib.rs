@@ -1521,7 +1521,7 @@ mod tests {
     fn test_json_types() {
         assert_eq!(
             ts_type_to_rust_type(Some("Json"), true).to_string(),
-            "dioxus_use_js::SerdeJsonValue"
+            "&dioxus_use_js::SerdeJsonValue"
         );
         assert_eq!(
             ts_type_to_rust_type(Some("Json"), false).to_string(),
