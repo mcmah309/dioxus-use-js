@@ -1229,14 +1229,6 @@ mod tests {
             ts_type_to_rust_type(Some("boolean"), true).to_string(),
             "bool"
         );
-        assert_eq!(
-            ts_type_to_rust_type(Some("object"), false).to_string(),
-            "dioxus_use_js::SerdeJsonValue"
-        );
-        assert_eq!(
-            ts_type_to_rust_type(Some("object"), true).to_string(),
-            "impl dioxus_use_js::SerdeSerialize"
-        );
     }
 
     #[test]
@@ -1347,7 +1339,7 @@ mod tests {
         );
         assert_eq!(
             ts_type_to_rust_type(Some("string | number"), false).to_string(),
-            "dioxus_use_js::SerdeJsonValue"
+            "T: dioxus_use_js::SerdeDeDeserializeOwned"
         );
         assert_eq!(
             ts_type_to_rust_type(Some("string | number | null"), true).to_string(),
@@ -1355,7 +1347,7 @@ mod tests {
         );
         assert_eq!(
             ts_type_to_rust_type(Some("string | number | null"), false).to_string(),
-            "dioxus_use_js::SerdeJsonValue"
+            "T: dioxus_use_js::SerdeDeDeserializeOwned"
         );
     }
 
@@ -1367,15 +1359,16 @@ mod tests {
         );
         assert_eq!(
             ts_type_to_rust_type(Some("foo"), false).to_string(),
-            "dioxus_use_js::SerdeJsonValue"
+            "T: dioxus_use_js::SerdeDeDeserializeOwned"
         );
+
         assert_eq!(
             ts_type_to_rust_type(Some("any"), true).to_string(),
             "impl dioxus_use_js::SerdeSerialize"
         );
         assert_eq!(
             ts_type_to_rust_type(Some("any"), false).to_string(),
-            "dioxus_use_js::SerdeJsonValue"
+            "T: dioxus_use_js::SerdeDeDeserializeOwned"
         );
         assert_eq!(
             ts_type_to_rust_type(Some("object"), true).to_string(),
@@ -1383,7 +1376,7 @@ mod tests {
         );
         assert_eq!(
             ts_type_to_rust_type(Some("object"), false).to_string(),
-            "dioxus_use_js::SerdeJsonValue"
+            "T: dioxus_use_js::SerdeDeDeserializeOwned"
         );
         assert_eq!(
             ts_type_to_rust_type(Some("unknown"), true).to_string(),
@@ -1391,8 +1384,15 @@ mod tests {
         );
         assert_eq!(
             ts_type_to_rust_type(Some("unknown"), false).to_string(),
-            "dioxus_use_js::SerdeJsonValue"
+            "T: dioxus_use_js::SerdeDeDeserializeOwned"
         );
+
+        assert_eq!(ts_type_to_rust_type(Some("void"), false).to_string(), "()");
+        assert_eq!(
+            ts_type_to_rust_type(Some("undefined"), false).to_string(),
+            "()"
+        );
+        assert_eq!(ts_type_to_rust_type(Some("null"), false).to_string(), "()");
     }
 
     #[test]
@@ -1504,6 +1504,18 @@ mod tests {
         assert_eq!(
             ts_type_to_rust_type(Some("Promise<boolean>"), false).to_string(),
             "bool"
+        );
+    }
+
+    #[test]
+    fn test_json_types() {
+        assert_eq!(
+            ts_type_to_rust_type(Some("Json"), true).to_string(),
+            "dioxus_use_js::SerdeJsonValue"
+        );
+        assert_eq!(
+            ts_type_to_rust_type(Some("Json"), false).to_string(),
+            "dioxus_use_js::SerdeJsonValue"
         );
     }
 }
