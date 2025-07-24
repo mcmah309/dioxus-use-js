@@ -7,7 +7,7 @@ type JsValue<T = any> = T;
 // output of void means it returns no arguments
 type RustCallback<A, R> = (arg: A) => Promise<R>;
 
-
+// type Json = string | number | boolean | null | { [key: string]: Json } | Json[];
 
 /** 
  * Creates a greeting
@@ -16,8 +16,8 @@ export function greeting(from, to: string): string {
     return `Hello ${to}, this is ${from} speaking from JavaScript!`;
 }
 
-export async function sleep(ms: number) {
-    return new Promise(resolve => setTimeout(resolve, ms))
+export async function sleep(ms: number): Promise<void> {
+    return new Promise(resolve => setTimeout(resolve, ms));
 }
 
 type MyObject = {

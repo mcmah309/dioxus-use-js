@@ -359,7 +359,15 @@ fn ts_type_to_rust_type_helper(mut ts_type: &str, is_input: bool, is_root: bool)
         }
         "number" => "f64",
         "boolean" => "bool",
-        "any" | "unknown" | "object" | _ => {
+        "void" | "undefined" | "never" | "null" => {
+            if is_input {
+                panic!("`{}` is only valid as an output type", ts_type.to_owned());
+            } else {
+                "()"
+            }
+        }
+        // "any" | "unknown" | "object" | .. etc.
+        _ => {
             if is_input {
                 SERDE_INPUT
             } else {
@@ -925,7 +933,28 @@ ___result___ = undefined;
         // Can not exist if `::*`
         .unwrap_or_else(|| Ident::new(func.name.as_str(), proc_macro2::Span::call_site()));
 
-    let end_statement = if callback_name_to_index.is_empty() {
+    // void like returns always send back "Null" as an ack
+    let void_output_mapping = if func.rust_return_type == "()" {
+        quote! {
+            .and_then(|e| {
+                if matches!(e, dioxus_use_js::SerdeJsonValue::Null) {
+                    Ok(())
+                } else {
+                    Err(dioxus_use_js::JsError::Eval(
+                        dioxus::document::EvalError::Serialization(
+                            <dioxus_use_js::SerdeJsonError as dioxus_use_js::SerdeDeError>::custom(dioxus_use_js::__BAD_VOID_RETURN.to_owned())
+                        )
+                    ))
+                }
+            })
+        }
+    }
+    else {
+        quote! {}
+    };
+
+    let has_no_callbacks = callback_name_to_index.is_empty();
+    let end_statement = if has_no_callbacks {
         let return_value_mapping = if func.rust_return_type == SERDE_OUTPUT {
             quote! {
                 .map_err(dioxus_use_js::JsError::Eval)
@@ -950,6 +979,7 @@ ___result___ = undefined;
                 eval
                     .await
                     #return_value_mapping
+                    #void_output_mapping
             }
         }
     } else {
@@ -957,7 +987,7 @@ ___result___ = undefined;
             .iter()
             .map(|(name, index)| {
                 let callback = callback_name_to_info.get(name).unwrap();
-                let callback_call = if callback.input.is_some() {
+                let callback_call = if let Some(_) = callback.input {
                     quote! {
                         let value = dioxus_use_js::serde_json_from_value(value).map_err(|e| {
                             dioxus_use_js::JsError::Eval(
@@ -981,7 +1011,8 @@ ___result___ = undefined;
                         };
                     }
                 };
-                let callback_send_back = if callback.output.is_some() {
+
+                let callback_send_back = if let Some(_) = callback.output {
                     quote! {
                         eval.send(value).map_err(dioxus_use_js::JsError::Eval)?;
                     }
@@ -1023,7 +1054,8 @@ ___result___ = undefined;
                                 dioxus_use_js::JsError::Eval(
                                     dioxus::document::EvalError::Serialization(e),
                                 )
-                            });
+                            })
+                            #void_output_mapping;
                         }
                         #(#callback_arms,)*
                         _ => unreachable!("{}", dioxus_use_js::__BAD_CALL_MSG),

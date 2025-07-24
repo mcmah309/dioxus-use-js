@@ -50,7 +50,7 @@ fn App() -> Element {
             callback1_signal
                 .write()
                 .replace_range(.., "Callback1 called! Sleeping for 1 second...");
-            let _ = sleep(1000.0).await;
+            sleep(1000.0).await?;
             callback1_signal
                 .write()
                 .replace_range(.., "Callback1 called!");
@@ -66,7 +66,7 @@ fn App() -> Element {
             callback2_signal
                 .write()
                 .replace_range(.., "Callback2 called! Sleeping for 1 second...");
-            let _ = sleep(1000.0).await;
+            sleep(1000.0).await?;
             callback2_signal
                 .write()
                 .replace_range(.., "Callback2 called!");
@@ -82,7 +82,7 @@ fn App() -> Element {
             callback3_signal
                 .write()
                 .replace_range(.., "Callback3 called! Sleeping for 1 second...");
-            let _ = sleep(1000.0).await;
+            sleep(1000.0).await?;
             callback3_signal
                 .write()
                 .replace_range(.., "Callback3 called!");
@@ -98,7 +98,7 @@ fn App() -> Element {
             callback4_signal
                 .write()
                 .replace_range(.., "Callback4 called! Sleeping for 1 second...");
-            let _ = sleep(1000.0).await;
+            sleep(1000.0).await?;
             callback4_signal
                 .write()
                 .replace_range(.., "Callback4 called!");

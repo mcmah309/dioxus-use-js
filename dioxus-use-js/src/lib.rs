@@ -9,15 +9,21 @@ pub use dioxus_use_js_macro::use_js;
 #[doc(hidden)]
 pub use serde::Serialize as SerdeSerialize;
 #[doc(hidden)]
+pub use serde::de::Error as SerdeDeError;
+#[doc(hidden)]
 pub use serde_json::Value as SerdeJsonValue;
 #[doc(hidden)]
 pub use serde_json::from_value as serde_json_from_value;
+#[doc(hidden)]
+pub use serde_json::Error as SerdeJsonError;
 #[doc(hidden)]
 pub const __SEND_VALIDATION_MSG: &str = "Should always send back a value that is an array of two.";
 #[doc(hidden)]
 pub const __INDEX_VALIDATION_MSG: &str = "The first sent back value should always be a u64.";
 #[doc(hidden)]
 pub const __BAD_CALL_MSG: &str = "Should only attempt to call known actions.";
+#[doc(hidden)]
+pub const __BAD_VOID_RETURN: &str = "A function that should return no value instead returned a value";
 // We do not export this so the dioxus version doing the eval is the same, otherwise it may compile but using two different versions of dioxus at runtime will likely cause a runtime error
 // be two different versions of dioxus in the graph
 // pub use dioxus::document::eval as dioxus_document_eval;
