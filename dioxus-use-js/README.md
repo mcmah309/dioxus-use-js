@@ -108,7 +108,7 @@ use_js!("source.ts", "bundle.js"::*);
 | `T[]`                 | `&[T]`           | `Vec<T>`          |
 | `Map<T, TT>`          | `&HashMap<T, TT>`| `HashMap<T, TT>`   |
 | `Set<T>`              | `&HashSet<T>`    | `HashSet<T>`    |
-| `void`, `undefined`, `never`, `null` | N/A | `()` |
+| `void`, `undefined`, `never`, `null` | `-` | `()` |
 | `any`, `unknown`, `object`, `-`, `*`     | `impl serde::Serialize` | `T: serde::de::DeserializeOwned` |
 | `Promise<T>`              | `&T`    | `T`    |
 
@@ -128,7 +128,7 @@ Special types are types not included in the regular Typescript type system, but 
 
 ### `Json`
 
-Json is a simple type that represents valid json.
+Json is a simple type that represents valid json. This type can best nested.
 
 ```ts
 type Json = string | number | boolean | null | { [key: string]: Json } | Json[];
@@ -157,7 +157,14 @@ pub async fn json() -> Result<Vec<Value> ,JsError>;
 
 ### `JsValue`: Javascript References
 
-This special TypeScript type signals to the macro to **bypass serialization** and pass native JS values as opaque references between Rust and JavaScript. The macro generates the glue code required. The JS value is automatically disposed when all references on the Rust side go out of scope.
+This special TypeScript type signals to the macro to **bypass serialization** and pass native JS values as opaque references between Rust and JavaScript. The macro generates the glue code required. The JS value is automatically disposed when all references on the Rust side go out of scope. Only the following are valid representations:
+
+| Valid Ts Uses               | Input  | Output|
+| :-------------------------- | :----- | :---- |
+| `JsValue<T>`, `JsValue`                    | `&JsValue`   | `JsValue` |
+| `Promise<JsValue<T>>`, `Promise<JsValue>`           | `-`   | `JsValue` |
+| `JsValue<T> \| null` `JsValue \| null`           | `Option<&JsValue>`   | `Option<JsValue>` |
+| `Promise<JsValue<T> \| null>`, `Promise<JsValue \| null>`           | `-`   | `Option<JsValue>` |
 
 ```ts
 type JsValue<T = any> = T;
@@ -215,7 +222,7 @@ let js_value_example: Resource<Result<f64, JsError>> = use_resource(|| async mov
 
 ### `RustCallback`: Passing Closures from Rust to JavaScript
 
-This special TypeScript type signals to the macro that a **Rust async closure** will be passed into the JavaScript function. The macro generates the glue code required. This enables advanced interop patterns, such as calling Rust logic from within JS — all while preserving type safety.
+This special TypeScript type signals to the macro that a **Rust async closure** will be passed into the JavaScript function. The macro generates the glue code required. This enables advanced interop patterns, such as calling Rust logic from within JS — all while preserving type safety. This type cannot be nested.
 
 ```ts
 type RustCallback<A, R> = (arg: A) => Promise<R>;

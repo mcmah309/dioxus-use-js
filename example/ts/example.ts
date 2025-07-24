@@ -41,6 +41,19 @@ export function useJsObject(input: number, value: JsValue<MyObject>): number {
     return result;
 }
 
+export async function createJsObjectPromise(): Promise<JsValue<MyObject>> {
+    return Promise.resolve(createJsObject());
+}
+
+export async function createJsObjectPromiseNullable(): Promise<(JsValue<MyObject> | null)> {
+    return Promise.resolve(null);
+}
+
+export function useJsObjectNullable(input: number, value: JsValue<MyObject> | null): number | null {
+    let result = value?.method(input) ?? null;
+    return result;
+}
+
 export async function useCallback1(startingValue: number, callback: RustCallback<number, number>): Promise<number> {
     let doubledValue = startingValue * 2;
     let quadrupledValue = await callback(doubledValue);
@@ -83,8 +96,8 @@ export async function untyped(input) {
     return null;
 }
 
-export function json(input: Json[]): Json[] {
-    return input;
+export function json(input: Json): Json[] {
+    return [input];
 }
 
 // Compile errors
@@ -95,3 +108,8 @@ export function json(input: Json[]): Json[] {
 // }
 
 // export function inputVoid(input: void) {}
+
+// Functions that return promise must be async
+// export function createJsObjectPromise(): Promise<number> {
+//     return 1;
+// }

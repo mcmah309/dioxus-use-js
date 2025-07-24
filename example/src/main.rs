@@ -5,7 +5,7 @@ use dioxus_use_js::{use_js, JsError};
 // with the correct Rust types determined from the source:
 use_js!("ts/example.ts", "assets/example.js"::*);
 // Note: Typescript is not needed, as seen in the below commented out examples.
-// But it is required for exact Rust type generation }and `JsValue`.
+// But it is required for exact Rust type generation and `JsValue`.
 
 // Javascript can also be used directly without typescript.
 // Generate a function without the correct Rust types:
@@ -40,6 +40,21 @@ fn App() -> Element {
         let output = useJsObject(2.0, &js_value).await?;
         // Since `js_value` is dropped here and all references no longer exist,
         // the referenced value will be disposed on the js side.
+        Ok(output)
+    });
+
+    let js_value_promise_example: Resource<Result<f64, JsError>> = use_resource(|| async move {
+        // Example using Promise<JsValue<T>>
+        let js_value = createJsObjectPromise().await?;
+        let output = useJsObject(5.0, &js_value).await?;
+        Ok(output)
+    });
+
+    let js_value_nullable_example: Resource<Result<f64, JsError>> = use_resource(|| async move {
+        // Example with nullable JsValue - returns null, so we get None
+        let js_value_option = createJsObjectPromiseNullable().await?;
+        let output = useJsObjectNullable(3.0, js_value_option.as_ref()).await?;
+        let output = output.unwrap_or(-1000.0);
         Ok(output)
     });
 
@@ -118,11 +133,22 @@ fn App() -> Element {
             }
 
             section {
-                h2 { "`JsValue`: Object Method Call" }
-                {example_result(&js_value_example.read())}
+                h2 { "`JsValue` Examples" }
                 small {
-                    "Check logs for cleanup message: \
+                    "Check logs for cleanup messages: \
                     'Successfully dropped JsValue and cleaned up JavaScript object'"
+                }
+                div {
+                    h3 { "Object Method Call (expected 27):" }
+                    {example_result(&js_value_example.read())}
+                }
+                div {
+                    h3 { "Promise (expected 30):" }
+                    {example_result(&js_value_promise_example.read())}
+                }
+                div {
+                    h3 { "Nullable (expected: -1000):" }
+                    {example_result(&js_value_nullable_example.read())}
                 }
             }
 

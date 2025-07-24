@@ -24,8 +24,7 @@ use syn::{
 
 /// `JsValue<T>`
 const JSVALUE_START: &str = "JsValue";
-const JSVALUE_INPUT: &str = "&dioxus_use_js::JsValue";
-const JSVALUE_OUTPUT: &str = "dioxus_use_js::JsValue";
+const JSVALUE: &str = "dioxus_use_js::JsValue";
 const DEFAULT_INPUT: &str = "impl dioxus_use_js::SerdeSerialize";
 const DEFAULT_OUTPUT: &str = "T: dioxus_use_js::SerdeDeDeserializeOwned";
 const SERDE_VALUE_INPUT: &str = "&dioxus_use_js::SerdeJsonValue";
@@ -113,7 +112,7 @@ struct FunctionInfo {
     // js return type
     #[allow(unused)]
     js_return_type: Option<String>,
-    rust_return_type: String,
+    rust_return_type: RustType,
     is_exported: bool,
     is_async: bool,
     /// The stripped lines
@@ -174,21 +173,15 @@ impl FunctionVisitor {
 enum RustType {
     Regular(String),
     CallBack(RustCallback),
+    JsValue(JsValue),
 }
 
 impl ToString for RustType {
     fn to_string(&self) -> String {
         match self {
             RustType::Regular(ty) => ty.clone(),
-            RustType::CallBack(callback) => {
-                let input = callback.input.as_deref();
-                let output = callback.output.as_deref().unwrap_or("()");
-                format!(
-                    "impl AsyncFnMut({}) -> Result<{}, Box<dyn std::error::Error + Send + Sync>>",
-                    input.unwrap_or_default(),
-                    output
-                )
-            }
+            RustType::CallBack(callback) => callback.to_string(),
+            RustType::JsValue(js_value) => js_value.to_string(),
         }
     }
 }
@@ -207,6 +200,52 @@ struct RustCallback {
     output: Option<String>,
 }
 
+impl ToString for RustCallback {
+    fn to_string(&self) -> String {
+        let input = self.input.as_deref();
+        let output = self.output.as_deref().unwrap_or("()");
+        format!(
+            "impl AsyncFnMut({}) -> Result<{}, Box<dyn std::error::Error + Send + Sync>>",
+            input.unwrap_or_default(),
+            output
+        )
+    }
+}
+
+#[derive(Debug, Clone)]
+struct JsValue {
+    is_option: bool,
+    is_input: bool,
+}
+
+impl ToString for JsValue {
+    fn to_string(&self) -> String {
+        if self.is_option {
+            format!(
+                "Option<{}>",
+                if self.is_input {
+                    format!("&{}", JSVALUE)
+                } else {
+                    JSVALUE.to_owned()
+                }
+            )
+        } else {
+            if self.is_input {
+                format!("&{}", JSVALUE)
+            } else {
+                JSVALUE.to_owned()
+            }
+        }
+    }
+}
+
+fn strip_parenthesis(mut ts_type: &str) -> &str {
+    while ts_type.starts_with("(") && ts_type.ends_with(")") {
+        ts_type = &ts_type[1..ts_type.len() - 1].trim();
+    }
+    return ts_type;
+}
+
 fn ts_type_to_rust_type(ts_type: Option<&str>, is_input: bool) -> RustType {
     let Some(mut ts_type) = ts_type else {
         return RustType::Regular(
@@ -218,44 +257,62 @@ fn ts_type_to_rust_type(ts_type: Option<&str>, is_input: bool) -> RustType {
             .to_owned(),
         );
     };
+    ts_type = strip_parenthesis(&mut ts_type);
     if ts_type.starts_with("Promise<") && ts_type.ends_with(">") {
         assert!(!is_input, "Promise cannot be used as input type");
         ts_type = &ts_type[8..ts_type.len() - 1];
     }
-    if ts_type.starts_with(JSVALUE_START) {
-        if is_input {
-            return RustType::Regular(JSVALUE_INPUT.to_owned());
+    ts_type = strip_parenthesis(&mut ts_type);
+    if ts_type.contains(JSVALUE_START) {
+        let parts = split_top_level_union(ts_type);
+        let len = parts.len();
+        if len == 1 && parts[0].starts_with(JSVALUE_START) {
+            return RustType::JsValue(JsValue {
+                is_option: false,
+                is_input,
+            });
+        }
+
+        if len == 2 && parts.contains(&"null") {
+            return RustType::JsValue(JsValue {
+                is_option: true,
+                is_input,
+            });
         } else {
-            return RustType::Regular(JSVALUE_OUTPUT.to_owned());
+            panic!("Invalid use of `{}` for `{}`", JSVALUE_START, ts_type);
         }
     }
-    if ts_type.starts_with(RUST_CALLBACK_JS_START) {
-        assert!(is_input, "Cannot return a RustCallback: {}", ts_type);
-        let ts_type = &ts_type[RUST_CALLBACK_JS_START.len()..];
-        if ts_type.starts_with("<") && ts_type.ends_with(">") {
-            let inner = &ts_type[1..ts_type.len() - 1];
-            let parts = inner.split(",").collect::<Vec<&str>>();
-            let len = parts.len();
-            if len != 2 {
-                panic!("A RustCallback type expects two parameters, got: {}", inner);
+    if ts_type.contains(RUST_CALLBACK_JS_START) {
+        if ts_type.starts_with(RUST_CALLBACK_JS_START) {
+            assert!(is_input, "Cannot return a RustCallback: {}", ts_type);
+            let ts_type = &ts_type[RUST_CALLBACK_JS_START.len()..];
+            if ts_type.starts_with("<") && ts_type.ends_with(">") {
+                let inner = &ts_type[1..ts_type.len() - 1];
+                let parts = inner.split(",").collect::<Vec<&str>>();
+                let len = parts.len();
+                if len != 2 {
+                    panic!("A RustCallback type expects two parameters, got: {}", inner);
+                }
+                let input = parts[0].trim();
+                let input = if input == "void" {
+                    None
+                } else {
+                    // `is_input` is false since the deserialized value is only passed to the callback so no point not to give ownership
+                    ts_type_to_rust_type_helper(parts[0].trim(), false, true)
+                };
+                // `RustCallback<T>` or `RustCallback<T,TT>`
+                let output = parts[1].trim();
+                let output = if output == "void" {
+                    None
+                } else {
+                    ts_type_to_rust_type_helper(parts[1].trim(), false, true)
+                };
+                return RustType::CallBack(RustCallback { input, output });
+            } else {
+                panic!("Invalid RustCallback type: {}", ts_type);
             }
-            let input = parts[0].trim();
-            let input = if input == "void" {
-                None
-            } else {
-                // `is_input` is false since the deserialized value is only passed to the callback so no point not to give ownership
-                ts_type_to_rust_type_helper(parts[0].trim(), false, true)
-            };
-            // `RustCallback<T>` or `RustCallback<T,TT>`
-            let output = parts[1].trim();
-            let output = if output == "void" {
-                None
-            } else {
-                ts_type_to_rust_type_helper(parts[1].trim(), false, true)
-            };
-            return RustType::CallBack(RustCallback { input, output });
         } else {
-            panic!("Invalid RustCallback type: {}", ts_type);
+            panic!("Nested RustCallback is not valid: {}", ts_type);
         }
     }
     RustType::Regular(match ts_type_to_rust_type_helper(ts_type, is_input, true) {
@@ -273,9 +330,7 @@ fn ts_type_to_rust_type(ts_type: Option<&str>, is_input: bool) -> RustType {
 /// Does not handle all edge cases
 fn ts_type_to_rust_type_helper(mut ts_type: &str, is_input: bool, is_root: bool) -> Option<String> {
     ts_type = ts_type.trim();
-    while ts_type.starts_with("(") && ts_type.ends_with(")") {
-        ts_type = &ts_type[1..ts_type.len() - 1].trim();
-    }
+    ts_type = strip_parenthesis(&mut ts_type);
 
     let parts = split_top_level_union(ts_type);
     if parts.len() > 1 {
@@ -376,10 +431,7 @@ fn ts_type_to_rust_type_helper(mut ts_type: &str, is_input: bool, is_root: bool)
                 "()"
             } else {
                 // Would cause serialization errors since `serde_json::Value::Null` cannot be deserialized into `()`
-                panic!(
-                    "`{}` is not valid as nested output type",
-                    ts_type.to_owned()
-                );
+                panic!("`{}` is not valid as nested output type", ts_type);
             }
         }
         JSON => {
@@ -388,6 +440,9 @@ fn ts_type_to_rust_type_helper(mut ts_type: &str, is_input: bool, is_root: bool)
             } else {
                 SERDE_VALUE_OUTPUT
             }
+        }
+        "Promise" => {
+            panic!("`{}` - nested promises are not valid", ts_type)
         }
         // "any" | "unknown" | "object" | .. etc.
         _ => {
@@ -514,14 +569,17 @@ impl Visit for FunctionVisitor {
             let ty = &type_ann.type_ann;
             type_to_string(ty, &self.source_map)
         });
-        let RustType::Regular(rust_return_type) =
-            ts_type_to_rust_type(js_return_type.as_deref(), false)
-        else {
+        let is_async = node.function.is_async;
+        if !is_async
+            && let Some(ref js_return_type) = js_return_type
+            && js_return_type.starts_with("Promise")
+        {
             panic!(
-                "Cannot return a Rust callback: {}",
-                js_return_type.as_deref().unwrap_or("")
-            )
-        };
+                "Promise return type is only supported for async functions, use `async fn` instead. For `{js_return_type}`"
+            );
+        }
+
+        let rust_return_type = ts_type_to_rust_type(js_return_type.as_deref(), false);
 
         self.functions.push(FunctionInfo {
             name: node.ident.sym.to_string(),
@@ -530,7 +588,7 @@ impl Visit for FunctionVisitor {
             js_return_type,
             rust_return_type,
             is_exported: false,
-            is_async: node.function.is_async,
+            is_async,
             doc_comment,
         });
         node.visit_children_with(self);
@@ -554,14 +612,17 @@ impl Visit for FunctionVisitor {
                                 let ty = &type_ann.type_ann;
                                 type_to_string(ty, &self.source_map)
                             });
-                        let RustType::Regular(rust_return_type) =
-                            ts_type_to_rust_type(js_return_type.as_deref(), false)
-                        else {
+                        let is_async = fn_expr.function.is_async;
+                        if !is_async
+                            && let Some(ref js_return_type) = js_return_type
+                            && js_return_type.starts_with("Promise")
+                        {
                             panic!(
-                                "Cannot return a Rust callback: {}",
-                                js_return_type.as_deref().unwrap_or("")
-                            )
-                        };
+                                "Promise return type is only supported for async functions, use `async fn` instead. For `{js_return_type}`"
+                            );
+                        }
+                        let rust_return_type =
+                            ts_type_to_rust_type(js_return_type.as_deref(), false);
 
                         self.functions.push(FunctionInfo {
                             name: ident.id.sym.to_string(),
@@ -570,7 +631,7 @@ impl Visit for FunctionVisitor {
                             js_return_type,
                             rust_return_type,
                             is_exported: false,
-                            is_async: fn_expr.function.is_async,
+                            is_async,
                             doc_comment,
                         });
                     }
@@ -581,14 +642,17 @@ impl Visit for FunctionVisitor {
                             let ty = &type_ann.type_ann;
                             type_to_string(ty, &self.source_map)
                         });
-                        let RustType::Regular(rust_return_type) =
-                            ts_type_to_rust_type(js_return_type.as_deref(), false)
-                        else {
+                        let rust_return_type =
+                            ts_type_to_rust_type(js_return_type.as_deref(), false);
+                        let is_async = arrow_fn.is_async;
+                        if !is_async
+                            && let Some(ref js_return_type) = js_return_type
+                            && js_return_type.starts_with("Promise")
+                        {
                             panic!(
-                                "Cannot return a Rust callback: {}",
-                                js_return_type.as_deref().unwrap_or("")
-                            )
-                        };
+                                "Promise return type is only supported for async functions, use `async fn` instead. For `{js_return_type}`"
+                            );
+                        }
 
                         self.functions.push(FunctionInfo {
                             name: ident.id.sym.to_string(),
@@ -597,7 +661,7 @@ impl Visit for FunctionVisitor {
                             js_return_type,
                             rust_return_type,
                             is_exported: false,
-                            is_async: arrow_fn.is_async,
+                            is_async,
                             doc_comment,
                         });
                     }
@@ -619,14 +683,16 @@ impl Visit for FunctionVisitor {
                 let ty = &type_ann.type_ann;
                 type_to_string(ty, &self.source_map)
             });
-            let RustType::Regular(rust_return_type) =
-                ts_type_to_rust_type(js_return_type.as_deref(), false)
-            else {
+            let rust_return_type = ts_type_to_rust_type(js_return_type.as_deref(), false);
+            let is_async = fn_decl.function.is_async;
+            if !is_async
+                && let Some(ref js_return_type) = js_return_type
+                && js_return_type.starts_with("Promise")
+            {
                 panic!(
-                    "Cannot return a Rust callback: {}",
-                    js_return_type.as_deref().unwrap_or("")
-                )
-            };
+                    "Promise return type is only supported for async functions, use `async fn` instead. For `{js_return_type}`"
+                );
+            }
 
             self.functions.push(FunctionInfo {
                 name: fn_decl.ident.sym.to_string(),
@@ -635,7 +701,7 @@ impl Visit for FunctionVisitor {
                 js_return_type,
                 rust_return_type,
                 is_exported: true,
-                is_async: fn_decl.function.is_async,
+                is_async,
                 doc_comment,
             });
         }
@@ -800,15 +866,19 @@ fn generate_function_wrapper(func: &FunctionInfo, asset_path: &LitStr) -> TokenS
         .flat_map(|param| {
             let param_name = format_ident!("{}", param.name);
             match &param.rust_type {
-                RustType::Regular(rust_type) => {
-                    if rust_type == JSVALUE_INPUT {
+                RustType::Regular(_) => Some(quote! {
+                    eval.send(#param_name).map_err(dioxus_use_js::JsError::Eval)?;
+                }),
+                RustType::JsValue(js_value) => {
+                    if js_value.is_option {
                         Some(quote! {
                             #[allow(deprecated)]
-                            eval.send(#param_name.internal_get()).map_err(dioxus_use_js::JsError::Eval)?;
+                            eval.send(#param_name.map(|e| e.internal_get())).map_err(dioxus_use_js::JsError::Eval)?;
                         })
                     } else {
                         Some(quote! {
-                            eval.send(#param_name).map_err(dioxus_use_js::JsError::Eval)?;
+                            #[allow(deprecated)]
+                            eval.send(#param_name.internal_get()).map_err(dioxus_use_js::JsError::Eval)?;
                         })
                     }
                 },
@@ -828,16 +898,22 @@ fn generate_function_wrapper(func: &FunctionInfo, asset_path: &LitStr) -> TokenS
         .params
         .iter()
         .map(|param| match &param.rust_type {
-            RustType::Regular(value) => {
-                if value == JSVALUE_INPUT {
-                    format!(
-                        "let {}Temp_ = await dioxus.recv();\nlet {} = window[{}Temp_];",
-                        param.name, param.name, param.name
-                    )
-                } else {
-                    format!("let {} = await dioxus.recv();", param.name)
-                }
+            RustType::Regular(_) => {
+                format!("let {} = await dioxus.recv();", param.name)
             }
+            RustType::JsValue(js_value) => {
+                let param_name = &param.name;
+                if js_value.is_option {
+                format!(
+                    "let {param_name}Temp_ = await dioxus.recv();\nlet {param_name} = null;\nif ({param_name}Temp_ !== null) {{{{ {param_name} = window[{param_name}Temp_] }}}};",
+                )
+            }
+            else {
+                format!(
+                    "let {param_name}Temp_ = await dioxus.recv();\nlet {param_name} = window[{param_name}Temp_];",
+                )
+            }
+            },
             RustType::CallBack(rust_callback) => {
                 let name = &param.name;
                 let index = callback_name_to_index.get(name).unwrap();
@@ -879,21 +955,31 @@ fn generate_function_wrapper(func: &FunctionInfo, asset_path: &LitStr) -> TokenS
     if func.is_async {
         await_fn.push_str("await");
     }
-    let call_function = if func.rust_return_type == JSVALUE_OUTPUT {
-        format!(
-            r#"
+    let call_function = match &func.rust_return_type {
+        RustType::Regular(_) => {
+            // eval will fail if returning undefined. undefined happens if there is no return type
+            format!(
+                r#"
+___result___ = {await_fn} {js_func_name}({params_list});
+"#
+            )
+        }
+        RustType::CallBack(_) => panic!("Cannot be an output type, should have panicked earlier."),
+        RustType::JsValue(js_value) => {
+            let null_check = if js_value.is_option {
+                "if (___resultValue___ === null || ___resultValue___ === undefined) {{{{ return null; }}}}"
+            } else {
+                ""
+            };
+            format!(
+                r#"
 const ___resultValue___ = {await_fn} {js_func_name}({params_list});
+{null_check}
 ___result___ = "js-value-" + crypto.randomUUID();
 window[___result___] = ___resultValue___;
         "#
-        )
-    } else {
-        // eval will fail if returning undefined. undefined happens if there is no return type
-        format!(
-            r#"
-___result___ = {await_fn} {js_func_name}({params_list});
-"#
-        )
+            )
+        }
     };
     let end_statement = if callback_name_to_index.is_empty() {
         "if (___result___ === undefined) {{{{ return null; }}}}; return ___result___;"
@@ -932,21 +1018,19 @@ ___result___ = undefined;
         })
         .collect();
 
-    let parsed_type = func
-        .rust_return_type
-        .parse::<TokenStream2>()
-        .expect("Calculated Rust type should always be valid");
-    let (return_type_tokens, generic_tokens) = if func.rust_return_type == DEFAULT_OUTPUT {
-        (
-            quote! { Result<T, dioxus_use_js::JsError> },
-            Some(quote! { <#parsed_type> }),
-        )
-    } else {
-        (
-            quote! { Result<#parsed_type, dioxus_use_js::JsError> },
-            None,
-        )
-    };
+    let parsed_type = func.rust_return_type.to_tokens();
+    let (return_type_tokens, generic_tokens) =
+        if func.rust_return_type.to_string() == DEFAULT_OUTPUT {
+            (
+                quote! { Result<T, dioxus_use_js::JsError> },
+                Some(quote! { <#parsed_type> }),
+            )
+        } else {
+            (
+                quote! { Result<#parsed_type, dioxus_use_js::JsError> },
+                None,
+            )
+        };
 
     // Generate documentation comment if available - preserve original JSDoc format
     let doc_comment = if func.doc_comment.is_empty() {
@@ -967,7 +1051,7 @@ ___result___ = undefined;
         .unwrap_or_else(|| Ident::new(func.name.as_str(), proc_macro2::Span::call_site()));
 
     // void like returns always send back "Null" as an ack
-    let void_output_mapping = if func.rust_return_type == "()" {
+    let void_output_mapping = if func.rust_return_type.to_string() == "()" {
         quote! {
             .and_then(|e| {
                 if matches!(e, dioxus_use_js::SerdeJsonValue::Null) {
@@ -987,7 +1071,7 @@ ___result___ = undefined;
 
     let has_no_callbacks = callback_name_to_index.is_empty();
     let end_statement = if has_no_callbacks {
-        let return_value_mapping = if func.rust_return_type == SERDE_VALUE_OUTPUT {
+        let return_value_mapping = if func.rust_return_type.to_string() == SERDE_VALUE_OUTPUT {
             quote! {
                 .map_err(dioxus_use_js::JsError::Eval)
             }
@@ -998,20 +1082,36 @@ ___result___ = undefined;
             }
         };
 
-        if func.rust_return_type == JSVALUE_OUTPUT {
-            quote! {
-            let id: String = eval
-                .await
-                #return_value_mapping?;
-                #[allow(deprecated)]
-                Ok(dioxus_use_js::JsValue::internal_create(id))
+        match &func.rust_return_type {
+            RustType::Regular(_) => {
+                quote! {
+                    eval
+                        .await
+                        #return_value_mapping
+                        #void_output_mapping
+                }
             }
-        } else {
-            quote! {
-                eval
-                    .await
-                    #return_value_mapping
-                    #void_output_mapping
+            RustType::CallBack(_) => {
+                panic!("Cannot be an output type, should have panicked earlier.")
+            }
+            RustType::JsValue(js_value) => {
+                if js_value.is_option {
+                    quote! {
+                    let id: Option<String> = eval
+                        .await
+                        #return_value_mapping?;
+                        #[allow(deprecated)]
+                        Ok(id.map(|e| dioxus_use_js::JsValue::internal_create(e)))
+                    }
+                } else {
+                    quote! {
+                    let id: String = eval
+                        .await
+                        #return_value_mapping?;
+                        #[allow(deprecated)]
+                        Ok(dioxus_use_js::JsValue::internal_create(id))
+                    }
+                }
             }
         }
     } else {

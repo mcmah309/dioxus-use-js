@@ -17,6 +17,16 @@ function useJsObject(input, value) {
   let result = value.method(input);
   return result;
 }
+async function createJsObjectPromise() {
+  return Promise.resolve(createJsObject());
+}
+async function createJsObjectPromiseNullable() {
+  return Promise.resolve(null);
+}
+function useJsObjectNullable(input, value) {
+  let result = value?.method(input) ?? null;
+  return result;
+}
 async function useCallback1(startingValue, callback) {
   let doubledValue = startingValue * 2;
   let quadrupledValue = await callback(doubledValue);
@@ -52,9 +62,10 @@ async function untyped(input) {
   return null;
 }
 function json(input) {
-  return input;
+  return [input];
 }
 export {
+  useJsObjectNullable,
   useJsObject,
   useCallback4,
   useCallback3,
@@ -64,5 +75,7 @@ export {
   sleep,
   json,
   greeting,
+  createJsObjectPromiseNullable,
+  createJsObjectPromise,
   createJsObject
 };
