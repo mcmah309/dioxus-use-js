@@ -51,6 +51,9 @@ async function useCallback4(startingValue, callback) {
 async function untyped(input) {
   return null;
 }
+function json(input) {
+  return input;
+}
 export {
   useJsObject,
   useCallback4,
@@ -59,6 +62,7 @@ export {
   useCallback1,
   untyped,
   sleep,
+  json,
   greeting,
   createJsObject
 };

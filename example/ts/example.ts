@@ -7,7 +7,7 @@ type JsValue<T = any> = T;
 // output of void means it returns no arguments
 type RustCallback<A, R> = (arg: A) => Promise<R>;
 
-// type Json = string | number | boolean | null | { [key: string]: Json } | Json[];
+type Json = string | number | boolean | null | { [key: string]: Json } | Json[];
 
 /** 
  * Creates a greeting
@@ -76,6 +76,13 @@ export async function useCallback4(startingValue: number, callback: RustCallback
     return startingValue + 10;
 }
 
+// Functions not used in example but still generated through `*`
+//************************************************************************//
+
 export async function untyped(input) {
     return null;
+}
+
+export function json(input: Json[]): Json[] {
+    return input;
 }

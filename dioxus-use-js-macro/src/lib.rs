@@ -23,16 +23,15 @@ use syn::{
 };
 
 /// `JsValue<T>`
-const JSVALUE_JS_START: &str = "JsValue";
+const JSVALUE_START: &str = "JsValue";
 const JSVALUE_INPUT: &str = "&dioxus_use_js::JsValue";
 const JSVALUE_OUTPUT: &str = "dioxus_use_js::JsValue";
 const DEFAULT_INPUT: &str = "impl dioxus_use_js::SerdeSerialize";
 const DEFAULT_OUTPUT: &str = "T: dioxus_use_js::SerdeDeDeserializeOwned";
-const SERDE_VALUE_OUTPUT: &str = "T: dioxus_use_js::SerdeJsonValue";
+const SERDE_VALUE: &str = "dioxus_use_js::SerdeJsonValue";
+const JSON: &str = "Json";
 /// `RustCallback<T,TT>`
 const RUST_CALLBACK_JS_START: &str = "RustCallback";
-// e.g. `impl AsyncFnMut(serde_json::Value) -> serde_json::Value` or `impl AsyncFnMut() -> ()`
-// const RUST_CALLBACK_INPUT_START: &str = "impl AsyncFnMut";
 
 #[derive(Debug, Clone)]
 enum ImportSpec {
@@ -218,7 +217,7 @@ fn ts_type_to_rust_type(ts_type: Option<&str>, is_input: bool) -> RustType {
             .to_owned(),
         );
     };
-    if ts_type.starts_with(JSVALUE_JS_START) {
+    if ts_type.starts_with(JSVALUE_START) {
         if is_input {
             return RustType::Regular(JSVALUE_INPUT.to_owned());
         } else {
@@ -379,6 +378,7 @@ fn ts_type_to_rust_type_helper(mut ts_type: &str, is_input: bool, is_root: bool)
                 "()"
             }
         }
+        JSON => SERDE_VALUE,
         // "any" | "unknown" | "object" | .. etc.
         _ => {
             if is_input {
@@ -977,7 +977,7 @@ ___result___ = undefined;
 
     let has_no_callbacks = callback_name_to_index.is_empty();
     let end_statement = if has_no_callbacks {
-        let return_value_mapping = if func.rust_return_type == SERDE_VALUE_OUTPUT {
+        let return_value_mapping = if func.rust_return_type == SERDE_VALUE {
             quote! {
                 .map_err(dioxus_use_js::JsError::Eval)
             }
