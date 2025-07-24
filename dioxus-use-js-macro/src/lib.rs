@@ -10,8 +10,8 @@ use swc_common::comments::{CommentKind, Comments};
 use swc_common::{SourceMap, Span, comments::SingleThreadedComments};
 use swc_common::{SourceMapper, Spanned};
 use swc_ecma_ast::{
-    Decl, ExportDecl, ExportSpecifier, FnDecl, ModuleExportName, NamedExport, Param, Pat, TsType,
-    VarDeclarator,
+    Decl, ExportDecl, ExportSpecifier, FnDecl, ModuleExportName, NamedExport, Pat, TsType,
+    TsTypeAnn, VarDeclarator,
 };
 use swc_ecma_parser::EsSyntax;
 use swc_ecma_parser::{Parser, StringInput, Syntax, lexer::Lexer};
@@ -134,7 +134,7 @@ impl FunctionVisitor {
         }
     }
 
-    fn extract_doc_comment(&self, span: Span) -> Vec<String> {
+    fn extract_doc_comment(&self, span: &Span) -> Vec<String> {
         // Get leading comments for the span
         let leading_comment = self.comments.get_leading(span.lo());
 
@@ -500,97 +500,94 @@ fn type_to_string(ty: &Box<TsType>, source_map: &SourceMap) -> String {
         .expect("Could not get snippet from span for type")
 }
 
-fn function_params_to_param_info(params: &[Param], source_map: &SourceMap) -> Vec<ParamInfo> {
-    params
-        .iter()
-        .enumerate()
-        .map(|(i, param)| {
-            let name = if let Some(ident) = param.pat.as_ident() {
-                ident.id.sym.to_string()
-            } else {
-                format!("arg{}", i)
-            };
-
-            let js_type = param
-                .pat
-                .as_ident()
-                .and_then(|ident| ident.type_ann.as_ref())
-                .map(|type_ann| {
-                    let ty = &type_ann.type_ann;
-                    type_to_string(ty, source_map)
-                });
-            let rust_type = ts_type_to_rust_type(js_type.as_deref(), true);
-
-            ParamInfo {
-                name,
-                js_type,
-                rust_type,
-            }
-        })
+fn function_pat_to_param_info<'a, I>(pats: I, source_map: &SourceMap) -> Vec<ParamInfo>
+where
+    I: Iterator<Item = &'a Pat>,
+{
+    pats.enumerate()
+        .map(|(i, pat)| to_param_info_helper(i, pat, source_map))
         .collect()
 }
 
-fn function_pat_to_param_info(pats: &[Pat], source_map: &SourceMap) -> Vec<ParamInfo> {
-    pats.iter()
-        .enumerate()
-        .map(|(i, pat)| {
-            let name = if let Some(ident) = pat.as_ident() {
-                ident.id.sym.to_string()
-            } else {
-                format!("arg{}", i)
-            };
+fn to_param_info_helper(i: usize, pat: &Pat, source_map: &SourceMap) -> ParamInfo {
+    let name = if let Some(ident) = pat.as_ident() {
+        ident.id.sym.to_string()
+    } else {
+        format!("arg{}", i)
+    };
 
-            let js_type = pat
-                .as_ident()
-                .and_then(|ident| ident.type_ann.as_ref())
-                .map(|type_ann| {
-                    let ty = &type_ann.type_ann;
-                    type_to_string(ty, source_map)
-                });
-            let rust_type = ts_type_to_rust_type(js_type.as_deref(), true);
+    let js_type = pat
+        .as_ident()
+        .and_then(|ident| ident.type_ann.as_ref())
+        .map(|type_ann| {
+            let ty = &type_ann.type_ann;
+            type_to_string(ty, source_map)
+        });
+    let rust_type = ts_type_to_rust_type(js_type.as_deref(), true);
 
-            ParamInfo {
-                name,
-                js_type,
-                rust_type,
-            }
-        })
-        .collect()
+    ParamInfo {
+        name,
+        js_type,
+        rust_type,
+    }
+}
+
+fn function_info_helper<'a, I>(
+    visitor: &FunctionVisitor,
+    name: String,
+    span: &Span,
+    params: I,
+    return_type: Option<&Box<TsTypeAnn>>,
+    is_async: bool,
+    is_exported: bool,
+) -> FunctionInfo
+where
+    I: Iterator<Item = &'a Pat>,
+{
+    let doc_comment = visitor.extract_doc_comment(span);
+
+    let params = function_pat_to_param_info(params, &visitor.source_map);
+
+    let js_return_type = return_type.as_ref().map(|type_ann| {
+        let ty = &type_ann.type_ann;
+        type_to_string(ty, &visitor.source_map)
+    });
+    if !is_async
+        && let Some(ref js_return_type) = js_return_type
+        && js_return_type.starts_with("Promise")
+    {
+        panic!(
+            "Promise return type is only supported for async functions, use `async fn` instead. For `{js_return_type}`"
+        );
+    }
+
+    let rust_return_type = ts_type_to_rust_type(js_return_type.as_deref(), false);
+
+    FunctionInfo {
+        name,
+        name_ident: None,
+        params,
+        js_return_type,
+        rust_return_type,
+        is_exported,
+        is_async,
+        doc_comment,
+    }
 }
 
 impl Visit for FunctionVisitor {
     /// Visit function declarations: function foo() {}
     fn visit_fn_decl(&mut self, node: &FnDecl) {
-        let doc_comment = self.extract_doc_comment(node.span());
-
-        let params = function_params_to_param_info(&node.function.params, &self.source_map);
-
-        let js_return_type = node.function.return_type.as_ref().map(|type_ann| {
-            let ty = &type_ann.type_ann;
-            type_to_string(ty, &self.source_map)
-        });
-        let is_async = node.function.is_async;
-        if !is_async
-            && let Some(ref js_return_type) = js_return_type
-            && js_return_type.starts_with("Promise")
-        {
-            panic!(
-                "Promise return type is only supported for async functions, use `async fn` instead. For `{js_return_type}`"
-            );
-        }
-
-        let rust_return_type = ts_type_to_rust_type(js_return_type.as_deref(), false);
-
-        self.functions.push(FunctionInfo {
-            name: node.ident.sym.to_string(),
-            name_ident: None,
-            params,
-            js_return_type,
-            rust_return_type,
-            is_exported: false,
-            is_async,
-            doc_comment,
-        });
+        let name = node.ident.sym.to_string();
+        self.functions.push(function_info_helper(
+            self,
+            name,
+            &node.span(),
+            node.function.params.iter().map(|e| &e.pat),
+            node.function.return_type.as_ref(),
+            node.function.is_async,
+            false,
+        ));
         node.visit_children_with(self);
     }
 
@@ -598,72 +595,30 @@ impl Visit for FunctionVisitor {
     fn visit_var_declarator(&mut self, node: &VarDeclarator) {
         if let swc_ecma_ast::Pat::Ident(ident) = &node.name {
             if let Some(init) = &node.init {
-                let doc_comment = self.extract_doc_comment(node.span());
-
+                let span = node.span();
+                let name = ident.id.sym.to_string();
                 match &**init {
                     swc_ecma_ast::Expr::Fn(fn_expr) => {
-                        let params = function_params_to_param_info(
-                            &fn_expr.function.params,
-                            &self.source_map,
-                        );
-
-                        let js_return_type =
-                            fn_expr.function.return_type.as_ref().map(|type_ann| {
-                                let ty = &type_ann.type_ann;
-                                type_to_string(ty, &self.source_map)
-                            });
-                        let is_async = fn_expr.function.is_async;
-                        if !is_async
-                            && let Some(ref js_return_type) = js_return_type
-                            && js_return_type.starts_with("Promise")
-                        {
-                            panic!(
-                                "Promise return type is only supported for async functions, use `async fn` instead. For `{js_return_type}`"
-                            );
-                        }
-                        let rust_return_type =
-                            ts_type_to_rust_type(js_return_type.as_deref(), false);
-
-                        self.functions.push(FunctionInfo {
-                            name: ident.id.sym.to_string(),
-                            name_ident: None,
-                            params,
-                            js_return_type,
-                            rust_return_type,
-                            is_exported: false,
-                            is_async,
-                            doc_comment,
-                        });
+                        self.functions.push(function_info_helper(
+                            &self,
+                            name,
+                            &span,
+                            fn_expr.function.params.iter().map(|e| &e.pat),
+                            fn_expr.function.return_type.as_ref(),
+                            fn_expr.function.is_async,
+                            false,
+                        ));
                     }
                     swc_ecma_ast::Expr::Arrow(arrow_fn) => {
-                        let params = function_pat_to_param_info(&arrow_fn.params, &self.source_map);
-
-                        let js_return_type = arrow_fn.return_type.as_ref().map(|type_ann| {
-                            let ty = &type_ann.type_ann;
-                            type_to_string(ty, &self.source_map)
-                        });
-                        let rust_return_type =
-                            ts_type_to_rust_type(js_return_type.as_deref(), false);
-                        let is_async = arrow_fn.is_async;
-                        if !is_async
-                            && let Some(ref js_return_type) = js_return_type
-                            && js_return_type.starts_with("Promise")
-                        {
-                            panic!(
-                                "Promise return type is only supported for async functions, use `async fn` instead. For `{js_return_type}`"
-                            );
-                        }
-
-                        self.functions.push(FunctionInfo {
-                            name: ident.id.sym.to_string(),
-                            name_ident: None,
-                            params,
-                            js_return_type,
-                            rust_return_type,
-                            is_exported: false,
-                            is_async,
-                            doc_comment,
-                        });
+                        self.functions.push(function_info_helper(
+                            &self,
+                            name,
+                            &span,
+                            arrow_fn.params.iter(),
+                            arrow_fn.return_type.as_ref(),
+                            arrow_fn.is_async,
+                            false,
+                        ));
                     }
                     _ => {}
                 }
@@ -675,35 +630,17 @@ impl Visit for FunctionVisitor {
     /// Visit export declarations: export function foo() {}
     fn visit_export_decl(&mut self, node: &ExportDecl) {
         if let Decl::Fn(fn_decl) = &node.decl {
-            let doc_comment = self.extract_doc_comment(node.span());
-
-            let params = function_params_to_param_info(&fn_decl.function.params, &self.source_map);
-
-            let js_return_type = fn_decl.function.return_type.as_ref().map(|type_ann| {
-                let ty = &type_ann.type_ann;
-                type_to_string(ty, &self.source_map)
-            });
-            let rust_return_type = ts_type_to_rust_type(js_return_type.as_deref(), false);
-            let is_async = fn_decl.function.is_async;
-            if !is_async
-                && let Some(ref js_return_type) = js_return_type
-                && js_return_type.starts_with("Promise")
-            {
-                panic!(
-                    "Promise return type is only supported for async functions, use `async fn` instead. For `{js_return_type}`"
-                );
-            }
-
-            self.functions.push(FunctionInfo {
-                name: fn_decl.ident.sym.to_string(),
-                name_ident: None,
-                params,
-                js_return_type,
-                rust_return_type,
-                is_exported: true,
-                is_async,
-                doc_comment,
-            });
+            let span = node.span();
+            let name = fn_decl.ident.sym.to_string();
+            self.functions.push(function_info_helper(
+                &self,
+                name,
+                &span,
+                fn_decl.function.params.iter().map(|e| &e.pat),
+                fn_decl.function.return_type.as_ref(),
+                fn_decl.function.is_async,
+                true,
+            ));
         }
         node.visit_children_with(self);
     }
