@@ -32,21 +32,20 @@ use_js!("assets/example.js"::greeting);
 **Generated Rust signature**:
 
 ```rust,ignore
-async fn greeting(from: impl Serialize, to: impl Serialize) -> Result<Value, JsError>;
+async fn greeting<T: DeserializeOwned>(from: impl Serialize, to: impl Serialize) -> Result<T, JsError>;
 ```
 
 Use it like:
 
 ```rust,ignore
-let val: Value = greeting("Alice", "Bob").await?;
-let s: String = serde_json::from_value(val)?;
+let val: String = greeting("Alice", "Bob").await?;
 ```
 
 ---
 
 ## TypeScript Usage
 
-If you use TypeScript, the macro will parse types to produce more accurate Rust bindings.
+If you use TypeScript, the macro will parse types to produce more accurate Rust bindings. See the [Type Mapping](#type-mapping) section for details on how TypeScript types are mapped to Rust types.
 
 ```ts
 // example.ts
@@ -98,6 +97,8 @@ use_js!("source.ts", "bundle.js"::*);
 
 ## Type Mapping
 
+### Built-in TypeScript Types
+
 | TypeScript            | Rust Input       | Rust Output       |
 | --------------------- | ---------------- | ----------------- |
 | `string`              | `&str`           | `String`          |
@@ -107,7 +108,14 @@ use_js!("source.ts", "bundle.js"::*);
 | `T[]`                 | `&[T]`           | `Vec<T>`          |
 | `Map<T, TT>`          | `&HashMap<T, TT>`| `HashMap<T, TT>`   |
 | `Set<T>`              | `&HashSet<T>`    | `HashSet<T>`    |
-| `any`, `unknown`, `object`, `-`     | `impl serde::Serialize` | `serde_json::Value`|
+| `void`, `undefined`, `never`, `null` | N/A | `()` |
+| `any`, `unknown`, `object`, `-`, `*`     | `impl serde::Serialize` | `T: serde::de::DeserializeOwned` |
+
+### Special Types
+
+| TypeScript            | Rust Input       | Rust Output       |
+| --------------------- | ---------------- | ----------------- |
+| `Json`    | `serde_json::Value` | `serde_json::Value` |
 | `JsValue<T>`, `JsValue`              | `&JsValue`       | `JsValue`         |
 | `RustCallback<T,TT>`     | `impl AsyncFnMut(T) -> Result<TT, Box<dyn Error + Send + Sync>>` | `-`|
 | `RustCallback<void,TT>`     | `impl AsyncFnMut() -> Result<TT, Box<dyn Error + Send + Sync>>` | `-`|
@@ -115,8 +123,40 @@ use_js!("source.ts", "bundle.js"::*);
 | `RustCallback<void,void>`     | `impl AsyncFnMut() -> Result<(), Box<dyn Error + Send + Sync>>` | `-`|
 
 ---
+## Special Types
 
-## `JsValue`: Javascript References
+Special types are types not included in the regular Typescript type system, but are understood by the `use_js!` macro and may augment the generated binding code.
+
+### `Json`
+
+Json is a simple type that represents valid json.
+
+```ts
+type Json = string | number | boolean | null | { [key: string]: Json } | Json[];
+```
+
+#### Example Usage
+
+**TypeScript:**
+
+```ts
+type Json = string | number | boolean | null | { [key: string]: Json } | Json[];
+
+export function json(): Json[] {
+    return [
+        {"key": "value"},
+        {"key": "value"},
+    ];
+}
+```
+
+**Generated Rust signature**:
+
+```rust,ignore
+pub async fn json() -> Result<Vec<Value> ,JsError>;
+```
+
+### `JsValue`: Javascript References
 
 This special TypeScript type signals to the macro to **bypass serialization** and pass native JS values as opaque references between Rust and JavaScript. The macro generates the glue code required. The JS value is automatically disposed when all references on the Rust side go out of scope.
 
@@ -124,7 +164,7 @@ This special TypeScript type signals to the macro to **bypass serialization** an
 type JsValue<T = any> = T;
 ```
 
-### Example Usage
+#### Example Usage
 
 **TypeScript:**
 
@@ -174,7 +214,7 @@ let js_value_example: Resource<Result<f64, JsError>> = use_resource(|| async mov
 });
 ```
 
-## `RustCallback`: Passing Closures from Rust to JavaScript
+### `RustCallback`: Passing Closures from Rust to JavaScript
 
 This special TypeScript type signals to the macro that a **Rust async closure** will be passed into the JavaScript function. The macro generates the glue code required. This enables advanced interop patterns, such as calling Rust logic from within JS — all while preserving type safety.
 
@@ -201,7 +241,7 @@ If output `R` is `void` then the Rust closure will return no output.
 
     
 
-### Example Usage
+#### Example Usage
 
 **TypeScript:**
 
