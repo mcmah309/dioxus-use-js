@@ -903,7 +903,7 @@ ___result___ = {await_fn} {js_func_name}({params_list});
         }
         RustType::CallBack(_) => panic!("Cannot be an output type, should have panicked earlier."),
         RustType::JsValue(js_value) => {
-            let null_check = if js_value.is_option {
+            let null_or_undefined_is_valid = if js_value.is_option {
                 "if (___resultValue___ === null || ___resultValue___ === undefined) {{{{ return null; }}}}"
             } else {
                 ""
@@ -911,7 +911,11 @@ ___result___ = {await_fn} {js_func_name}({params_list});
             format!(
                 r#"
 const ___resultValue___ = {await_fn} {js_func_name}({params_list});
-{null_check}
+{null_or_undefined_is_valid}
+if (___resultValue___ === undefined) {{{{ 
+    console.error("`{js_func_name}` was undefined, but value is needed for JsValue");
+    return null;
+}}}}
 ___result___ = "js-value-{js_func_name}-" + crypto.randomUUID();
 window[___result___] = ___resultValue___;
         "#
