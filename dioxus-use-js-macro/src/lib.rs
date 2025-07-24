@@ -1586,12 +1586,21 @@ mod tests {
         );
 
         assert_eq!(
-            ts_type_to_rust_type(Some("Promise<JsValue>"), true).to_string(),
-            "&dioxus_use_js::JsValue"
-        );
-        assert_eq!(
             ts_type_to_rust_type(Some("Promise<JsValue>"), false).to_string(),
             "dioxus_use_js::JsValue"
+        );
+
+        assert_eq!(
+            ts_type_to_rust_type(Some("Promise<JsValue | null>"), false).to_string(),
+            "Option<dioxus_use_js::JsValue>"
+        );
+        assert_eq!(
+            ts_type_to_rust_type(Some("JsValue | null"), true).to_string(),
+            "Option<&dioxus_use_js::JsValue>"
+        );
+        assert_eq!(
+            ts_type_to_rust_type(Some("JsValue | null"), false).to_string(),
+            "Option<dioxus_use_js::JsValue>"
         );
     }
 }
