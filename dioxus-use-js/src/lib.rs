@@ -41,14 +41,16 @@ fn _send_sync_error_assert() {
 /// An error related to the execution of a javascript operation
 #[derive(Debug)]
 pub enum JsError {
+    /// Error occurred during evaluation. Including serialization/deserialization, communication, and js execution
     Eval(dioxus::document::EvalError),
+    /// Error occurred during a callback to a rust function
     Callback(Box<dyn Error + Send + Sync>),
 }
 
 impl std::fmt::Display for JsError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            JsError::Eval(e) => write!(f, "JavaScript evaluation error: {}", e),
+            JsError::Eval(e) => write!(f, "JavaScript error: {}", e),
             JsError::Callback(error) => write!(f, "Callback error: {}", error),
         }
     }
@@ -58,12 +60,15 @@ impl std::error::Error for JsError {}
 
 //************************************************************************//
 
-pub trait EvalResultExt {
-    fn deserialize<T: serde::de::DeserializeOwned>(self) -> Result<T, JsError>;
+pub type JsResult<T> = Result<T, JsError>;
+
+pub trait JsResultExt {
+    /// Parses the output from a JS function invocation into a more concrete type
+    fn deserialize<T: serde::de::DeserializeOwned>(self) -> JsResult<T>;
 }
 
-impl EvalResultExt for Result<serde_json::Value, JsError> {
-    fn deserialize<T: serde::de::DeserializeOwned>(self) -> Result<T, JsError> {
+impl JsResultExt for Result<serde_json::Value, JsError> {
+    fn deserialize<T: serde::de::DeserializeOwned>(self) -> JsResult<T> {
         self.and_then(|v| {
             serde_json::from_value(v)
                 .map_err(|e| JsError::Eval(dioxus::document::EvalError::Serialization(e)))
@@ -71,14 +76,21 @@ impl EvalResultExt for Result<serde_json::Value, JsError> {
     }
 }
 
-impl EvalResultExt for Result<serde_json::Value, dioxus::document::EvalError> {
-    fn deserialize<T: serde::de::DeserializeOwned>(self) -> Result<T, JsError> {
-        self.map_err(JsError::Eval).and_then(|v| {
-            serde_json::from_value(v)
-                .map_err(|e| JsError::Eval(dioxus::document::EvalError::Serialization(e)))
-        })
-    }
-}
+// impl JsParse for Result<serde_json::Value, dioxus::document::EvalError> {
+//     fn parse<T: serde::de::DeserializeOwned>(self) -> Result<T, JsError> {
+//         self.map_err(JsError::Eval).and_then(|v| {
+//             serde_json::from_value(v)
+//                 .map_err(|e| JsError::Eval(dioxus::document::EvalError::Serialization(e)))
+//         })
+//     }
+// }
+
+// impl JsParse for serde_json::Value {
+//     fn parse<T: serde::de::DeserializeOwned>(self) -> Result<T, JsError> {
+//         serde_json::from_value(self)
+//             .map_err(|e| JsError::Eval(dioxus::document::EvalError::Serialization(e)))
+//     }
+// }
 
 //************************************************************************//
 
