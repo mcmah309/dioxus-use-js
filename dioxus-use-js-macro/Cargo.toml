@@ -1,9 +1,9 @@
 [package]
 name = "dioxus-use-js-macro"
-version = "0.2.0-alpha.4"
+version = "0.2.0-alpha.5"
 authors = ["Dillon Henry McMahon"]
 edition = "2024"
-description = "javascript use bridge macro for Dioxus"
+description = "A macro that generates Rust bindings to JavaScript or TypeScript functions, with compile time checks. For use with Dioxus."
 license = "MIT OR Apache-2.0"
 repository = "https://github.com/mcmah309/dioxus-use-js"
 
