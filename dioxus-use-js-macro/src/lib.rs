@@ -912,7 +912,7 @@ ___result___ = {await_fn} {js_func_name}({params_list});
                 r#"
 const ___resultValue___ = {await_fn} {js_func_name}({params_list});
 {null_check}
-___result___ = "js-value-{js_func_name}" + crypto.randomUUID();
+___result___ = "js-value-{js_func_name}-" + crypto.randomUUID();
 window[___result___] = ___resultValue___;
         "#
             )
