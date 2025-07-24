@@ -110,6 +110,7 @@ use_js!("source.ts", "bundle.js"::*);
 | `Set<T>`              | `&HashSet<T>`    | `HashSet<T>`    |
 | `void`, `undefined`, `never`, `null` | N/A | `()` |
 | `any`, `unknown`, `object`, `-`, `*`     | `impl serde::Serialize` | `T: serde::de::DeserializeOwned` |
+| `Promise<T>`              | `&T`    | `T`    |
 
 ### Special Types
 

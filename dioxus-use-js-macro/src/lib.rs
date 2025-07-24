@@ -208,7 +208,7 @@ struct RustCallback {
 }
 
 fn ts_type_to_rust_type(ts_type: Option<&str>, is_input: bool) -> RustType {
-    let Some(ts_type) = ts_type else {
+    let Some(mut ts_type) = ts_type else {
         return RustType::Regular(
             (if is_input {
                 DEFAULT_INPUT
@@ -218,6 +218,10 @@ fn ts_type_to_rust_type(ts_type: Option<&str>, is_input: bool) -> RustType {
             .to_owned(),
         );
     };
+    if ts_type.starts_with("Promise<") && ts_type.ends_with(">") {
+        assert!(!is_input, "Promise cannot be used as input type");
+        ts_type = &ts_type[8..ts_type.len() - 1];
+    }
     if ts_type.starts_with(JSVALUE_START) {
         if is_input {
             return RustType::Regular(JSVALUE_INPUT.to_owned());
@@ -354,13 +358,6 @@ fn ts_type_to_rust_type_helper(mut ts_type: &str, is_input: bool, is_root: bool)
         }
     }
 
-    if ts_type.starts_with("Promise<") && ts_type.ends_with(">") {
-        let inner = &ts_type[8..ts_type.len() - 1];
-        assert!(!is_input, "Promise cannot be used as input type");
-        let inner_rust = ts_type_to_rust_type_helper(inner, false, is_root)?;
-        return Some(inner_rust);
-    }
-
     // Base types
     let rust_type = match ts_type {
         "string" => {
@@ -379,7 +376,10 @@ fn ts_type_to_rust_type_helper(mut ts_type: &str, is_input: bool, is_root: bool)
                 "()"
             } else {
                 // Would cause serialization errors since `serde_json::Value::Null` cannot be deserialized into `()`
-                panic!("`{}` is not valid as nested output type", ts_type.to_owned());
+                panic!(
+                    "`{}` is not valid as nested output type",
+                    ts_type.to_owned()
+                );
             }
         }
         JSON => {
@@ -388,7 +388,7 @@ fn ts_type_to_rust_type_helper(mut ts_type: &str, is_input: bool, is_root: bool)
             } else {
                 SERDE_VALUE_OUTPUT
             }
-        },
+        }
         // "any" | "unknown" | "object" | .. etc.
         _ => {
             if is_input {
@@ -1526,6 +1526,35 @@ mod tests {
         assert_eq!(
             ts_type_to_rust_type(Some("Json"), false).to_string(),
             "dioxus_use_js::SerdeJsonValue"
+        );
+    }
+
+    #[test]
+    fn test_js_value() {
+        assert_eq!(
+            ts_type_to_rust_type(Some("JsValue"), true).to_string(),
+            "&dioxus_use_js::JsValue"
+        );
+        assert_eq!(
+            ts_type_to_rust_type(Some("JsValue"), false).to_string(),
+            "dioxus_use_js::JsValue"
+        );
+        assert_eq!(
+            ts_type_to_rust_type(Some("JsValue<CustomType>"), true).to_string(),
+            "&dioxus_use_js::JsValue"
+        );
+        assert_eq!(
+            ts_type_to_rust_type(Some("JsValue<CustomType>"), false).to_string(),
+            "dioxus_use_js::JsValue"
+        );
+
+        assert_eq!(
+            ts_type_to_rust_type(Some("Promise<JsValue>"), true).to_string(),
+            "&dioxus_use_js::JsValue"
+        );
+        assert_eq!(
+            ts_type_to_rust_type(Some("Promise<JsValue>"), false).to_string(),
+            "dioxus_use_js::JsValue"
         );
     }
 }
