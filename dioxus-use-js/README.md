@@ -115,7 +115,7 @@ use_js!("source.ts", "bundle.js"::*);
 
 | TypeScript            | Rust Input       | Rust Output       |
 | --------------------- | ---------------- | ----------------- |
-| `Json`    | `serde_json::Value` | `serde_json::Value` |
+| `Json`    | `&serde_json::Value` | `serde_json::Value` |
 | `JsValue<T>`, `JsValue`              | `&JsValue`       | `JsValue`         |
 | `RustCallback<T,TT>`     | `impl AsyncFnMut(T) -> Result<TT, Box<dyn Error + Send + Sync>>` | `-`|
 | `RustCallback<void,TT>`     | `impl AsyncFnMut() -> Result<TT, Box<dyn Error + Send + Sync>>` | `-`|

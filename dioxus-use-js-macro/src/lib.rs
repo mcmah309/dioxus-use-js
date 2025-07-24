@@ -28,7 +28,8 @@ const JSVALUE_INPUT: &str = "&dioxus_use_js::JsValue";
 const JSVALUE_OUTPUT: &str = "dioxus_use_js::JsValue";
 const DEFAULT_INPUT: &str = "impl dioxus_use_js::SerdeSerialize";
 const DEFAULT_OUTPUT: &str = "T: dioxus_use_js::SerdeDeDeserializeOwned";
-const SERDE_VALUE: &str = "dioxus_use_js::SerdeJsonValue";
+const SERDE_VALUE_INPUT: &str = "&dioxus_use_js::SerdeJsonValue";
+const SERDE_VALUE_OUTPUT: &str = "dioxus_use_js::SerdeJsonValue";
 const JSON: &str = "Json";
 /// `RustCallback<T,TT>`
 const RUST_CALLBACK_JS_START: &str = "RustCallback";
@@ -381,7 +382,13 @@ fn ts_type_to_rust_type_helper(mut ts_type: &str, is_input: bool, is_root: bool)
                 panic!("`{}` is not valid as nested output type", ts_type.to_owned());
             }
         }
-        JSON => SERDE_VALUE,
+        JSON => {
+            if is_input && is_root {
+                SERDE_VALUE_INPUT
+            } else {
+                SERDE_VALUE_OUTPUT
+            }
+        },
         // "any" | "unknown" | "object" | .. etc.
         _ => {
             if is_input {
@@ -980,7 +987,7 @@ ___result___ = undefined;
 
     let has_no_callbacks = callback_name_to_index.is_empty();
     let end_statement = if has_no_callbacks {
-        let return_value_mapping = if func.rust_return_type == SERDE_VALUE {
+        let return_value_mapping = if func.rust_return_type == SERDE_VALUE_OUTPUT {
             quote! {
                 .map_err(dioxus_use_js::JsError::Eval)
             }
