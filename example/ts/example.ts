@@ -75,3 +75,7 @@ export async function useCallback4(startingValue: number, callback: RustCallback
     }
     return startingValue + 10;
 }
+
+export async function untyped(input) {
+    return null;
+}

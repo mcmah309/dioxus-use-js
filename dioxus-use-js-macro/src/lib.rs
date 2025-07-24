@@ -26,8 +26,9 @@ use syn::{
 const JSVALUE_JS_START: &str = "JsValue";
 const JSVALUE_INPUT: &str = "&dioxus_use_js::JsValue";
 const JSVALUE_OUTPUT: &str = "dioxus_use_js::JsValue";
-const SERDE_INPUT: &str = "impl dioxus_use_js::SerdeSerialize";
-const SERDE_OUTPUT: &str = "dioxus_use_js::SerdeJsonValue";
+const DEFAULT_INPUT: &str = "impl dioxus_use_js::SerdeSerialize";
+const DEFAULT_OUTPUT: &str = "T: dioxus_use_js::SerdeDeDeserializeOwned";
+const SERDE_VALUE_OUTPUT: &str = "T: dioxus_use_js::SerdeJsonValue";
 /// `RustCallback<T,TT>`
 const RUST_CALLBACK_JS_START: &str = "RustCallback";
 // e.g. `impl AsyncFnMut(serde_json::Value) -> serde_json::Value` or `impl AsyncFnMut() -> ()`
@@ -208,7 +209,14 @@ struct RustCallback {
 
 fn ts_type_to_rust_type(ts_type: Option<&str>, is_input: bool) -> RustType {
     let Some(ts_type) = ts_type else {
-        return RustType::Regular((if is_input { SERDE_INPUT } else { SERDE_OUTPUT }).to_owned());
+        return RustType::Regular(
+            (if is_input {
+                DEFAULT_INPUT
+            } else {
+                DEFAULT_OUTPUT
+            })
+            .to_owned(),
+        );
     };
     if ts_type.starts_with(JSVALUE_JS_START) {
         if is_input {
@@ -248,7 +256,12 @@ fn ts_type_to_rust_type(ts_type: Option<&str>, is_input: bool) -> RustType {
     }
     RustType::Regular(match ts_type_to_rust_type_helper(ts_type, is_input, true) {
         Some(value) => value,
-        None => (if is_input { SERDE_INPUT } else { SERDE_OUTPUT }).to_owned(),
+        None => (if is_input {
+            DEFAULT_INPUT
+        } else {
+            DEFAULT_OUTPUT
+        })
+        .to_owned(),
     })
 }
 
@@ -369,9 +382,9 @@ fn ts_type_to_rust_type_helper(mut ts_type: &str, is_input: bool, is_root: bool)
         // "any" | "unknown" | "object" | .. etc.
         _ => {
             if is_input {
-                SERDE_INPUT
+                DEFAULT_INPUT
             } else {
-                SERDE_OUTPUT
+                DEFAULT_OUTPUT
             }
         }
     };
@@ -913,7 +926,17 @@ ___result___ = undefined;
         .rust_return_type
         .parse::<TokenStream2>()
         .expect("Calculated Rust type should always be valid");
-    let return_type_tokens = quote! { Result<#parsed_type, dioxus_use_js::JsError> };
+    let (return_type_tokens, generic_tokens) = if func.rust_return_type == DEFAULT_OUTPUT {
+        (
+            quote! { Result<T, dioxus_use_js::JsError> },
+            Some(quote! { <#parsed_type> }),
+        )
+    } else {
+        (
+            quote! { Result<#parsed_type, dioxus_use_js::JsError> },
+            None,
+        )
+    };
 
     // Generate documentation comment if available - preserve original JSDoc format
     let doc_comment = if func.doc_comment.is_empty() {
@@ -948,14 +971,13 @@ ___result___ = undefined;
                 }
             })
         }
-    }
-    else {
+    } else {
         quote! {}
     };
 
     let has_no_callbacks = callback_name_to_index.is_empty();
     let end_statement = if has_no_callbacks {
-        let return_value_mapping = if func.rust_return_type == SERDE_OUTPUT {
+        let return_value_mapping = if func.rust_return_type == SERDE_VALUE_OUTPUT {
             quote! {
                 .map_err(dioxus_use_js::JsError::Eval)
             }
@@ -1070,7 +1092,7 @@ ___result___ = undefined;
     quote! {
         #doc_comment
         #[allow(non_snake_case)]
-        pub async fn #func_name(#(#param_types),*) -> #return_type_tokens {
+        pub async fn #func_name #generic_tokens(#(#param_types),*) -> #return_type_tokens {
             const MODULE: Asset = asset!(#asset_path);
             let js = format!(#js_format, MODULE);
             let mut eval = dioxus::document::eval(js.as_str());

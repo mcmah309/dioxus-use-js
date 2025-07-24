@@ -48,12 +48,16 @@ async function useCallback4(startingValue, callback) {
   }
   return startingValue + 10;
 }
+async function untyped(input) {
+  return null;
+}
 export {
   useJsObject,
   useCallback4,
   useCallback3,
   useCallback2,
   useCallback1,
+  untyped,
   sleep,
   greeting,
   createJsObject

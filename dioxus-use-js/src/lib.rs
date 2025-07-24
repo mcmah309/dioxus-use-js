@@ -11,6 +11,8 @@ pub use serde::Serialize as SerdeSerialize;
 #[doc(hidden)]
 pub use serde::de::Error as SerdeDeError;
 #[doc(hidden)]
+pub use serde::de::DeserializeOwned as SerdeDeDeserializeOwned;
+#[doc(hidden)]
 pub use serde_json::Value as SerdeJsonValue;
 #[doc(hidden)]
 pub use serde_json::from_value as serde_json_from_value;
@@ -63,40 +65,6 @@ impl std::fmt::Display for JsError {
 }
 
 impl std::error::Error for JsError {}
-
-//************************************************************************//
-
-pub type JsResult<T> = Result<T, JsError>;
-
-pub trait JsResultExt {
-    /// Parses the output from a JS function invocation into a more concrete type
-    fn deserialize<T: serde::de::DeserializeOwned>(self) -> JsResult<T>;
-}
-
-impl JsResultExt for Result<serde_json::Value, JsError> {
-    fn deserialize<T: serde::de::DeserializeOwned>(self) -> JsResult<T> {
-        self.and_then(|v| {
-            serde_json::from_value(v)
-                .map_err(|e| JsError::Eval(dioxus::document::EvalError::Serialization(e)))
-        })
-    }
-}
-
-// impl JsParse for Result<serde_json::Value, dioxus::document::EvalError> {
-//     fn parse<T: serde::de::DeserializeOwned>(self) -> Result<T, JsError> {
-//         self.map_err(JsError::Eval).and_then(|v| {
-//             serde_json::from_value(v)
-//                 .map_err(|e| JsError::Eval(dioxus::document::EvalError::Serialization(e)))
-//         })
-//     }
-// }
-
-// impl JsParse for serde_json::Value {
-//     fn parse<T: serde::de::DeserializeOwned>(self) -> Result<T, JsError> {
-//         serde_json::from_value(self)
-//             .map_err(|e| JsError::Eval(dioxus::document::EvalError::Serialization(e)))
-//     }
-// }
 
 //************************************************************************//
 
