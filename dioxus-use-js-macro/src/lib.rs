@@ -903,19 +903,16 @@ ___result___ = {await_fn} {js_func_name}({params_list});
         }
         RustType::CallBack(_) => panic!("Cannot be an output type, should have panicked earlier."),
         RustType::JsValue(js_value) => {
-            let null_or_undefined_is_valid = if js_value.is_option {
-                "if (___resultValue___ === null || ___resultValue___ === undefined) {{{{ return null; }}}}"
+            let check = if js_value.is_option {
+                // null or undefined is valid, since this is e.g. `Option<JsValue>`
+                "if (___resultValue___ === null || ___resultValue___ === undefined) {{{{ return null; }}}}".to_owned()
             } else {
-                ""
+                format!("if (___resultValue___ === undefined) {{{{ console.error(\"`{js_func_name}` was undefined, but value is needed for JsValue\"); return null; }}}}")
             };
             format!(
                 r#"
 const ___resultValue___ = {await_fn} {js_func_name}({params_list});
-{null_or_undefined_is_valid}
-if (___resultValue___ === undefined) {{{{ 
-    console.error("`{js_func_name}` was undefined, but value is needed for JsValue");
-    return null;
-}}}}
+{check}
 ___result___ = "js-value-{js_func_name}-" + crypto.randomUUID();
 window[___result___] = ___resultValue___;
         "#
@@ -923,9 +920,9 @@ window[___result___] = ___resultValue___;
         }
     };
     let end_statement = if callback_name_to_index.is_empty() {
-        "if (___result___ === undefined) {{{{ return null; }}}}; return ___result___;"
+        "if (___result___ === undefined) {{ return null; }}; return ___result___;"
     } else {
-        "if (___result___ === undefined) {{{{ dioxus.send([0, null]); }}}}; dioxus.send([0, ___result___]);"
+        "if (___result___ === undefined) {{ dioxus.send([0, null]); }}; dioxus.send([0, ___result___]);"
     };
 
     let js_format = format!(
