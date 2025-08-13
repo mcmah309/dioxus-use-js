@@ -4,6 +4,7 @@ use std::process::Command;
 
 use bon::Builder;
 
+#[cfg_attr(docsrs, doc(cfg(feature = "compile")))]
 #[derive(Builder)]
 pub struct BunTsCompile {
     /// Files to build from
