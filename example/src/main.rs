@@ -3,7 +3,7 @@ use dioxus_use_js::{use_js, JsError};
 
 // Use typescript to generate the following functions at compile time
 // with the correct Rust types determined from the source:
-use_js!("ts/example.ts", "assets/example.js"::*);
+use_js!("js-utils/src/example.ts", "assets/example.js"::*);
 // Note: Typescript is not needed, as seen in the below commented out examples.
 // But it is required for exact Rust type generation and `JsValue`.
 

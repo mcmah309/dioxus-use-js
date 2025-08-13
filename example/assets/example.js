@@ -1,4 +1,4 @@
-// ts/example.ts
+// js-utils/src/example.ts
 function greeting(from, to) {
   return `Hello ${to}, this is ${from} speaking from JavaScript!`;
 }

@@ -2,6 +2,11 @@
 
 use std::{error::Error, fmt::Display, sync::Arc};
 
+#[cfg(feature = "compile")]
+mod compile;
+#[cfg(feature = "compile")]
+pub use compile::*;
+
 pub use dioxus_use_js_macro::use_js;
 
 // We export these so downstreams don't need `serde` or `serde_json` directly

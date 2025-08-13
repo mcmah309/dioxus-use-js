@@ -13,3 +13,12 @@ dioxus-use-js-macro = { version = "=0.2.0-alpha.6", path = "../dioxus-use-js-mac
 dioxus = { version = "0.7.0-alpha.3" }
 serde = { version = "1" }
 serde_json = { version = "1" }
+
+bon = { version = "3", optional = true }
+
+[features]
+# Adds convenience typescript compile runners to use in build.rs
+compile = ["dep:bon"]
+
+[package.metadata.docs.rs]
+all-features = true

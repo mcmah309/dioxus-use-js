@@ -11,6 +11,9 @@ edition = "2021"
 dioxus-use-js = { path = "../dioxus-use-js" }
 dioxus = { version = "0.7.0-alpha.3" }
 
+[build-dependencies]
+dioxus-use-js = { path = "../dioxus-use-js", features = ["compile"]}
+
 [features]
 default = ["web"]
 web = ["dioxus/web"]
