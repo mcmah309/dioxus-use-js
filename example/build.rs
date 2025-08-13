@@ -6,7 +6,6 @@ fn main() {
     BunTsCompile::builder()
         .src_files(vec![PathBuf::from("js-utils/src/example.ts")])
         .output_dir(PathBuf::from("assets"))
-        .minify(false)
         .build()
         .run();
 }

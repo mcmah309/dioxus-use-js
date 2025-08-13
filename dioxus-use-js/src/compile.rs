@@ -53,7 +53,12 @@ impl BunTsCompile {
             args.extend(["--outdir".to_owned(), output_dir]);
         }
         if self.minify {
-            args.push("--minify".to_owned());
+            args.extend([
+                "--minify-syntax".to_owned(),
+                "--minify-whitespace".to_owned(),
+                // todo Note cannot currently use `--minify-identifiers` since the macro will not find the js functions during validation
+                // "--minify-identifiers".to_owned(),
+            ]);
         }
         args.push("--target=browser".to_owned());
         args.extend(self.extra_flags.iter().flatten().cloned());
