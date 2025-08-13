@@ -17,10 +17,25 @@ pub struct BunTsCompile {
     minify: bool,
     /// Extra bun build flags
     extra_flags: Option<Vec<String>>,
+    /// If true, the normal run command will not execute if bun is not installed, but will still print and error. Useful for CI.
+    #[builder(default = false)]
+    skip_if_bun_missing: bool,
 }
 
 impl BunTsCompile {
     pub fn run(&self) {
+        fn bun_exists() -> bool {
+            Command::new("bun")
+                .arg("--version")
+                .output()
+                .map(|o| o.status.success())
+                .unwrap_or(false)
+        }
+        if self.skip_if_bun_missing && !bun_exists() {
+            eprintln!("Bun does not exist, skipping bun build.");
+            return;
+        }
+
         let src_files = self
             .src_files
             .iter()
