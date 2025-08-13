@@ -17,7 +17,7 @@ pub struct BunTsCompile {
     minify: bool,
     /// Extra bun build flags
     extra_flags: Option<Vec<String>>,
-    /// If true, the normal run command will not execute if bun is not installed, but will still print and error. Useful for CI.
+    /// If true, the normal run command will not execute if bun is not installed, but will still print a warning. Useful for CI.
     #[builder(default = false)]
     skip_if_bun_missing: bool,
 }
@@ -32,7 +32,7 @@ impl BunTsCompile {
                 .unwrap_or(false)
         }
         if self.skip_if_bun_missing && !bun_exists() {
-            eprintln!("Bun does not exist, skipping bun build.");
+            println!("cargo:warning=Bun does not exist and configuration allows this, skipping bun build.");
             return;
         }
 
