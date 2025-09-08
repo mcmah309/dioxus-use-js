@@ -19,8 +19,3 @@ swc_ecma_ast = { version = "13.0.0", default-features = false }
 swc_ecma_visit = { version = "13.0.0", default-features = false }
 swc_common = { version = "13.0.2", default-features = false }
 
-[dev-dependencies]
-dioxus = "0.7.0-alpha.2"
-serde = "1.0"
-serde_json = "1.0"
-
