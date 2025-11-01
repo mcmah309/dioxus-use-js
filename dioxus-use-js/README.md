@@ -60,6 +60,7 @@ Compile with:
 ```sh
 bun build js-utils/example.ts --outfile assets/example.js
 ```
+> See [BunTsCompile](https://docs.rs/dioxus-use-js/latest/dioxus_use_js/struct.BunTsCompile.html) for use in `build.rs` as well - [Example](https://github.com/mcmah309/dioxus-use-js/blob/master/example/build.rs)
 
 Bind with:
 
