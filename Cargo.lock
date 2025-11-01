@@ -1357,7 +1357,7 @@ dependencies = [
 
 [[package]]
 name = "dioxus-use-js"
-version = "0.2.0-alpha.7"
+version = "0.2.0"
 dependencies = [
  "bon",
  "dioxus",
@@ -1368,7 +1368,7 @@ dependencies = [
 
 [[package]]
 name = "dioxus-use-js-macro"
-version = "0.2.0-alpha.7"
+version = "0.2.0"
 dependencies = [
  "proc-macro2",
  "quote",

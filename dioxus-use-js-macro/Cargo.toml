@@ -1,6 +1,6 @@
 [package]
 name = "dioxus-use-js-macro"
-version = "0.2.0-alpha.7"
+version = "0.2.0"
 authors = ["Dillon Henry McMahon"]
 edition = "2024"
 description = "A macro that generates Rust bindings to JavaScript or TypeScript functions, with compile time checks. For use with Dioxus."
