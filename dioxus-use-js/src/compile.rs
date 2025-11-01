@@ -17,7 +17,9 @@ pub struct BunTsCompile {
     minify: bool,
     /// Extra bun build flags
     extra_flags: Option<Vec<String>>,
-    /// If true, the normal run command will not execute if bun is not installed, but will still print a warning. Useful for CI.
+    /// If true, the normal `bun build ...` command will not execute if bun is not installed, but will instead print a warning.
+    /// This may be useful in CI environment where bun is not installed (and is not needed), since the output was created during
+    /// development and is already in source.
     #[builder(default = false)]
     skip_if_no_bun: bool,
 }
