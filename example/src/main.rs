@@ -4,18 +4,6 @@ use dioxus_use_js::{use_js, JsError};
 // Use typescript to generate the following functions at compile time
 // with the correct Rust types determined from the source:
 use_js!("js-utils/src/example.ts", "assets/example.js"::*);
-// Note: Typescript is not needed, as seen in the below commented out examples.
-// But it is required for exact Rust type generation and `JsValue`.
-
-// Javascript can also be used directly without typescript.
-// Generate a function without the correct Rust types:
-// use_js!("assets/example.js"::greeting);
-
-// Generate multiple functions:
-// use_js!("assets/example.js"::{greeting});
-
-// Generate all exported functions:
-// use_js!("assets/example.js"::*);
 
 fn main() {
     dioxus::logger::init(Level::TRACE).unwrap();
