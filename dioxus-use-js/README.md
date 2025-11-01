@@ -14,7 +14,7 @@ Works across all `eval` supported platforms (**Web**, **Desktop**, **Mobile**, a
 You can write plain JavaScript and bind exported functions directly.
 
 ```js
-// example.js
+// assets/example.js
 
 export function greeting(from, to) {
     return `Hello ${to}, this is ${from} speaking from JavaScript!`;
@@ -48,7 +48,7 @@ let val: String = greeting("Alice", "Bob").await?;
 If you use TypeScript, the macro will parse types to produce more accurate Rust bindings. See the [Type Mapping](#type-mapping) section for details on how TypeScript types are mapped to Rust types.
 
 ```ts
-// example.ts
+// js-utils/example.ts
 
 export function greeting(from: string, to: string): string {
     return `Hello ${to}, this is ${from} speaking from JavaScript!`;
@@ -58,13 +58,13 @@ export function greeting(from: string, to: string): string {
 Compile with:
 
 ```sh
-bun build src/example.ts --outfile assets/example.js
+bun build js-utils/example.ts --outfile assets/example.js
 ```
 
 Bind with:
 
 ```rust,ignore
-use_js!("src/example.ts", "assets/example.js"::{greeting});
+use_js!("js-utils/example.ts", "assets/example.js"::{greeting});
 ```
 
 **Generated Rust signature**:
