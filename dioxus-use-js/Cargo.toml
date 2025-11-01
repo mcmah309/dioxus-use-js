@@ -10,7 +10,10 @@ repository = "https://github.com/mcmah309/dioxus-use-js"
 
 [dependencies]
 dioxus-use-js-macro = { version = "=0.2.0-alpha.7", path = "../dioxus-use-js-macro" }
-dioxus = { version = "0.7.0-alpha.3" }
+dioxus = { version = "0.7.0", default-features = false, features = [
+    "lib",
+    "logger",
+] }
 serde = { version = "1" }
 serde_json = { version = "1" }
 
