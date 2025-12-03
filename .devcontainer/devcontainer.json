@@ -4,22 +4,31 @@
 	"image": "dioxus",
 	"customizations": {
 		"vscode": {
+			"settings": {
+				"extensions.verifySignature": false
+			},
 			"extensions": [
 				// general tools
-				"chunsen.bracket-select",
-				"dzhavat.bracket-pair-toggler",
-				"oderwat.indent-rainbow",
-				"fabiospampinato.vscode-git-history",
-				"streetsidesoftware.code-spell-checker",
-				"rebornix.toggle", // used in settings.json to add a toggle for inlay hints in rust - `ctrl+q`
-				"ryuta46.multi-command", // used in settings.json to add custom command combinators
+				"usernamehw.errorlens", // Inline diagnostic errors
+				"ryuta46.multi-command", // Used in settings.json to add custom command combinators
+				// "streetsidesoftware.code-spell-checker", // Spell check
+				"redhat.vscode-yaml", // yaml lsp
+                "qufiwefefwoyn.inline-sql-syntax", // sql syntax highlighting in strings with `--sql`
 				
 				// rust
 				"fill-labs.dependi", // dependency validation in Cargo.toml
 				"tamasfe.even-better-toml", // toml lsp
-				"redhat.vscode-yaml", // yaml lsp
 				"rust-lang.rust-analyzer", // rust lsp
 				"vadimcn.vscode-lldb", // rust debugger
+				
+				
+				"ms-vscode.cpptools", // language support for C/C++, debugging, etc (things like intelliSense/formatting are disabled in favor of clangd)
+				"ms-vscode.cmake-tools", // cmake
+				"llvm-vs-code-extensions.vscode-clangd", // C/C++ intellisense, formatting, etc
+				"vadimcn.vscode-lldb", // C debugger
+				
+				
+				"ziglang.vscode-zig",
 				
 				
 				// dioxus
@@ -38,9 +47,6 @@
 				"ms-vscode.live-server", // live preview of html
 				
 				
-				// sh
-				"timonwong.shellcheck", // sh lsp
-				
 			]
 		}
 	},
@@ -49,24 +55,12 @@
 	"runArgs": [
 		"--privileged",
 		"--net=host",
+		"--pids-limit=16384", // Some processes like rustc can spawn more than the default process/thread limit of 2048
 		// ssh
 		"-v", "/home/henry/.ssh/:/root/.ssh",
 		
 		
-		// Xdg
-		"-e", "DISPLAY=${localEnv:DISPLAY}", // X11 display
-		"-e", "WAYLAND_DISPLAY=${localEnv:WAYLAND_DISPLAY}", // Wayland display
-		"-e", "XDG_RUNTIME_DIR=${localEnv:XDG_RUNTIME_DIR}", // XDG socket
-		"-v", "${localEnv:XDG_RUNTIME_DIR}:${localEnv:XDG_RUNTIME_DIR}", // XDG socket
-		"-v", "/tmp/.X11-unix:/tmp/.X11-unix", // X11 socket into the container. Apps inside the container can now connect to DISPLAY to talk to the host's X server.
-		"--device", "/dev/dri:/dev/dri", // graphics hardware access
-		
 	],
-	
-	// Xdg
-	"onCreateCommand": "apt-get update && apt-get install -y xdg-desktop-portal xdg-desktop-portal-gtk dbus dbus-x11", // Ensure XDG libraries 
-  	"postStartCommand": "dbus-daemon --session --address=unix:path=/tmp/dbus-session --fork && echo 'export DBUS_SESSION_BUS_ADDRESS=unix:path=/tmp/dbus-session' >> ~/.bashrc", // Starts D-Bus session daemon required for XDG Portal and GUI applications
-	//
 	
 	"remoteUser": "root",
 }
