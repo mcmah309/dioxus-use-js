@@ -105,7 +105,7 @@ struct ParamInfo {
 #[derive(Debug, Clone)]
 struct FunctionInfo {
     name: String,
-    /// If specified in the use declaration
+    /// If specified in the `use_js!` declaration. Used to link the generated code to this span
     name_ident: Option<Ident>,
     /// js param types
     params: Vec<ParamInfo>,
@@ -649,13 +649,18 @@ impl Visit for FunctionVisitor {
     fn visit_named_export(&mut self, node: &NamedExport) {
         for spec in &node.specifiers {
             if let ExportSpecifier::Named(named) = spec {
-                let name = match &named.orig {
-                    ModuleExportName::Ident(ident) => ident.sym.to_string(),
-                    ModuleExportName::Str(str_lit) => str_lit.value.to_string(),
-                };
+                let original_name = named.orig.atom().to_string();
+                let out_name = named
+                    .exported
+                    .as_ref()
+                    .map(|e| e.atom().to_string())
+                    .unwrap_or_else(|| original_name.clone());
 
-                if let Some(func) = self.functions.iter_mut().find(|f| f.name == name) {
+                if let Some(func) = self.functions.iter_mut().find(|f| f.name == original_name) {
+                    let mut func = func.clone();
+                    func.name = out_name;
                     func.is_exported = true;
+                    self.functions.push(func);
                 }
             }
         }
@@ -725,7 +730,7 @@ fn parse_script_file(file_path: &Path, is_js: bool) -> Result<Vec<FunctionInfo>>
     let mut visitor = FunctionVisitor::new(comments, source_map);
     module.visit_with(&mut visitor);
 
-    // Functions are added twice for some reason
+    // Functions are added twice for some reason.
     visitor
         .functions
         .dedup_by(|e1, e2| e1.name.as_str() == e2.name.as_str());
