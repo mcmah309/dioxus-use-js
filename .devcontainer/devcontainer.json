@@ -22,13 +22,6 @@
 				"vadimcn.vscode-lldb", // rust debugger
 				
 				
-				"ms-vscode.cpptools", // language support for C/C++, debugging, etc (things like intelliSense/formatting are disabled in favor of clangd)
-				"ms-vscode.cmake-tools", // cmake
-				"llvm-vs-code-extensions.vscode-clangd", // C/C++ intellisense, formatting, etc
-				"vadimcn.vscode-lldb", // C debugger
-				
-				
-				"ziglang.vscode-zig",
 				
 				
 				// dioxus
@@ -36,15 +29,6 @@
 				
 				
 				
-				
-				// web
-				"oven.bun-vscode", // bun
-				"ecmel.vscode-html-css", // html/css support
-				"bradlc.vscode-tailwindcss", // tailwind css support
-				"jock.svg", // svg language support
-				"vincaslt.highlight-matching-tag", // highlights matching html tags
-				"pranaygp.vscode-css-peek", // Go to definition for css
-				"ms-vscode.live-server", // live preview of html
 				
 				
 			]
