@@ -4,6 +4,7 @@ use dioxus_use_js::{use_js, JsError};
 // Use typescript to generate the following functions at compile time
 // with the correct Rust types determined from the source:
 use_js!("js-utils/src/example.ts", "assets/example.js"::*);
+// Use pure js
 use_js!("assets/other.js"::*);
 
 fn main() {
