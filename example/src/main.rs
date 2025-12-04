@@ -4,6 +4,7 @@ use dioxus_use_js::{use_js, JsError};
 // Use typescript to generate the following functions at compile time
 // with the correct Rust types determined from the source:
 use_js!("js-utils/src/example.ts", "assets/example.js"::*);
+use_js!("assets/other.js"::*);
 
 fn main() {
     dioxus::logger::init(Level::TRACE).unwrap();
@@ -12,6 +13,11 @@ fn main() {
 
 #[component]
 fn App() -> Element {
+    let do_nothing: Resource<Result<String, JsError>> = use_resource(|| async move {
+        let _:() = do_nothing().await?;
+        Ok("Perfect".to_owned())
+    });
+
     let function_calling_example: Resource<Result<String, JsError>> = use_resource(|| async move {
         let from = "john";
         let to = "dave";
@@ -52,8 +58,8 @@ fn App() -> Element {
         let callback = async |value: f64| {
             callback1_signal
                 .write()
-                .replace_range(.., "Callback1 called! Sleeping for 1 second...");
-            sleep(1000.0).await?;
+                .replace_range(.., "Callback1 called! Sleeping for 2 second...");
+            sleep(2000.0).await?;
             callback1_signal
                 .write()
                 .replace_range(.., "Callback1 called!");
@@ -68,8 +74,8 @@ fn App() -> Element {
         let callback = async || {
             callback2_signal
                 .write()
-                .replace_range(.., "Callback2 called! Sleeping for 1 second...");
-            sleep(1000.0).await?;
+                .replace_range(.., "Callback2 called! Sleeping for 2 second...");
+            sleep(2000.0).await?;
             callback2_signal
                 .write()
                 .replace_range(.., "Callback2 called!");
@@ -84,8 +90,8 @@ fn App() -> Element {
         let callback = async |_: f64| {
             callback3_signal
                 .write()
-                .replace_range(.., "Callback3 called! Sleeping for 1 second...");
-            sleep(1000.0).await?;
+                .replace_range(.., "Callback3 called! Sleeping for 2 second...");
+            sleep(2000.0).await?;
             callback3_signal
                 .write()
                 .replace_range(.., "Callback3 called!");
@@ -100,8 +106,8 @@ fn App() -> Element {
         let callback = async || {
             callback4_signal
                 .write()
-                .replace_range(.., "Callback4 called! Sleeping for 1 second...");
-            sleep(1000.0).await?;
+                .replace_range(.., "Callback4 called! Sleeping for 2 second...");
+            sleep(2000.0).await?;
             callback4_signal
                 .write()
                 .replace_range(.., "Callback4 called!");
@@ -113,10 +119,16 @@ fn App() -> Element {
 
     rsx!(
         main { style: "padding: 2rem; font-family: sans-serif; line-height: 1.6;",
+
             h1 { "Dioxus `use_js!` Macro Example" }
 
             section {
                 h2 { "Simple JS Function Call" }
+                {example_result(&do_nothing.read())}
+            }
+
+            section {
+                h2 { "Simple TS Function Call" }
                 {example_result(&function_calling_example.read())}
             }
 
