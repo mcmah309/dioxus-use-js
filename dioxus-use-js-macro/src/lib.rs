@@ -732,7 +732,7 @@ fn parse_script_file(file_path: &Path, is_js: bool) -> Result<Vec<FunctionInfo>>
     Ok(visitor.functions)
 }
 
-fn remove_valid_function_info(
+fn take_function_by_name(
     name: &str,
     functions: &mut Vec<FunctionInfo>,
     file: &Path,
@@ -764,10 +764,9 @@ fn get_functions_to_generate(
     file: &Path,
 ) -> Result<Vec<FunctionInfo>> {
     match import_spec {
-        ImportSpec::All => Ok(functions),
+        ImportSpec::All => Ok(functions.into_iter().filter(|e| e.is_exported).collect()),
         ImportSpec::Single(name) => {
-            let mut func =
-                remove_valid_function_info(name.to_string().as_str(), &mut functions, file)?;
+            let mut func = take_function_by_name(name.to_string().as_str(), &mut functions, file)?;
             func.name_ident.replace(name.clone());
             Ok(vec![func])
         }
@@ -775,7 +774,7 @@ fn get_functions_to_generate(
             let mut result = Vec::new();
             for name in names {
                 let mut func =
-                    remove_valid_function_info(name.to_string().as_str(), &mut functions, file)?;
+                    take_function_by_name(name.to_string().as_str(), &mut functions, file)?;
                 func.name_ident.replace(name.clone());
                 result.push(func);
             }
@@ -907,7 +906,9 @@ ___result___ = {await_fn} {js_func_name}({params_list});
                 // null or undefined is valid, since this is e.g. `Option<JsValue>`
                 "if (___resultValue___ === null || ___resultValue___ === undefined) {{{{ return null; }}}}".to_owned()
             } else {
-                format!("if (___resultValue___ === undefined) {{{{ console.error(\"`{js_func_name}` was undefined, but value is needed for JsValue\"); return null; }}}}")
+                format!(
+                    "if (___resultValue___ === undefined) {{{{ console.error(\"`{js_func_name}` was undefined, but value is needed for JsValue\"); return null; }}}}"
+                )
             };
             format!(
                 r#"
