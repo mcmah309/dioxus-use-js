@@ -1,9 +1,9 @@
 use std::path::PathBuf;
 
-use dioxus_use_js::BunTsCompile;
+use dioxus_use_js::BunBuild;
 
 fn main() {
-    BunTsCompile::builder()
+    BunBuild::builder()
         .src_files(vec![PathBuf::from("js-utils/src/example.ts")])
         .output_dir(PathBuf::from("assets"))
         .skip_if_no_bun(true)

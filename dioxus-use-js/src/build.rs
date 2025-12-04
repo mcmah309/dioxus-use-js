@@ -4,9 +4,9 @@ use std::process::Command;
 
 use bon::Builder;
 
-#[cfg_attr(docsrs, doc(cfg(feature = "compile")))]
+#[cfg_attr(docsrs, doc(cfg(feature = "build")))]
 #[derive(Builder)]
-pub struct BunTsCompile {
+pub struct BunBuild {
     /// Files to build from
     src_files: Vec<PathBuf>,
     /// The output directory
@@ -24,7 +24,7 @@ pub struct BunTsCompile {
     skip_if_no_bun: bool,
 }
 
-impl BunTsCompile {
+impl BunBuild {
     pub fn run(&self) {
         fn bun_exists() -> bool {
             Command::new("bun")
@@ -59,7 +59,6 @@ impl BunTsCompile {
 
         if let Some(output_file) = &self.output_file {
             args.extend([
-                "--compile".to_owned(),
                 "--outfile".to_owned(),
                 self.output_dir
                     .join(output_file)

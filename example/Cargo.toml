@@ -11,7 +11,7 @@ dioxus-use-js = { path = "../dioxus-use-js" }
 dioxus = { version = "0.7.0" }
 
 [build-dependencies]
-dioxus-use-js = { path = "../dioxus-use-js", features = ["compile"]}
+dioxus-use-js = { path = "../dioxus-use-js", features = ["build"]}
 
 [features]
 default = ["web"]
