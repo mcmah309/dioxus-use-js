@@ -365,7 +365,7 @@ fn ts_type_to_rust_type(ts_type: Option<&str>, is_input: bool) -> RustType {
             if value.contains(UNIT) && (is_input || &value != UNIT) {
                 // Would cause serialization errors since `serde_json::Value::Null` or any, cannot be deserialized into `()`.
                 // We handle `()` special case to account for this if this is the root type in the output. But not input or output nested.
-                panic!("`{}` is not valid in this positioh", ts_type);
+                panic!("`{}` is not valid in this position", ts_type);
             }
             value
         }
