@@ -25,6 +25,10 @@ type MyObject = {
     method: (value: number) => number;
 };
 
+export function throws(): void {
+    throw Error("This error should show up in the console");
+}
+
 /// Creates a js value that is not serialized
 export function createJsObject(): JsValue<MyObject> {
     return {
@@ -91,6 +95,10 @@ export async function callback4(startingValue: number, callback: RustCallback<vo
 
 export async function callback5(callback: RustCallback<Json, void>) {
     callback([1,2]);
+}
+
+export async function callback6(callback: RustCallback<void, void>): Promise<void> {
+    callback();
 }
 
 // Functions not used in example but still generated through `*`

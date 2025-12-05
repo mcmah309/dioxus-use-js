@@ -1,10 +1,12 @@
 #![doc = include_str!("../README.md")]
 
 use core::panic;
+use indexmap::IndexMap;
 use proc_macro::TokenStream;
-use proc_macro2::TokenStream as TokenStream2;
+use proc_macro2::{Literal, TokenStream as TokenStream2};
 use quote::{format_ident, quote};
 use std::collections::HashMap;
+use std::str::FromStr;
 use std::{fs, path::Path};
 use swc_common::comments::{CommentKind, Comments};
 use swc_common::{SourceMap, Span, comments::SingleThreadedComments};
@@ -174,7 +176,7 @@ impl FunctionVisitor {
 #[derive(Debug, Clone)]
 enum RustType {
     Regular(String),
-    CallBack(RustCallback),
+    Callback(RustCallback),
     JsValue(JsValue),
 }
 
@@ -182,7 +184,7 @@ impl ToString for RustType {
     fn to_string(&self) -> String {
         match self {
             RustType::Regular(ty) => ty.clone(),
-            RustType::CallBack(callback) => callback.to_string(),
+            RustType::Callback(callback) => callback.to_string(),
             RustType::JsValue(js_value) => js_value.to_string(),
         }
     }
@@ -355,7 +357,7 @@ fn ts_type_to_rust_type(ts_type: Option<&str>, is_input: bool) -> RustType {
             }
             rs_output
         };
-        return RustType::CallBack(RustCallback {
+        return RustType::Callback(RustCallback {
             input: rs_input,
             output: rs_output,
         });
@@ -827,15 +829,17 @@ fn get_functions_to_generate(
 fn generate_function_wrapper(func: &FunctionInfo, asset_path: &LitStr) -> TokenStream2 {
     // If we have callbacks, we cant do a simpl return, we have to do message passing
     let mut callback_name_to_index: HashMap<String, u64> = HashMap::new();
-    let mut callback_name_to_info: HashMap<String, &RustCallback> = HashMap::new();
-    let mut index: u64 = 1; // 0 is the return value
+    let mut callback_name_to_info: IndexMap<String, &RustCallback> = IndexMap::new();
+    let mut index: u64 = 2; // 0 is the return value, 1 is an error.
     for param in &func.params {
-        if let RustType::CallBack(callback) = &param.rust_type {
+        if let RustType::Callback(callback) = &param.rust_type {
             callback_name_to_index.insert(param.name.to_owned(), index);
             index += 1;
             callback_name_to_info.insert(param.name.to_owned(), callback);
         }
     }
+    let js_func_name = &func.name;
+    let js_func_name_ident = quote! { FUNC_NAME };
 
     let send_calls: Vec<TokenStream2> = func
         .params
@@ -844,54 +848,53 @@ fn generate_function_wrapper(func: &FunctionInfo, asset_path: &LitStr) -> TokenS
             let param_name = format_ident!("{}", param.name);
             match &param.rust_type {
                 RustType::Regular(_) => Some(quote! {
-                    eval.send(#param_name).map_err(dioxus_use_js::JsError::Eval)?;
+                    eval.send(#param_name).map_err(|e| dioxus_use_js::JsError::Eval { func: #js_func_name_ident, error: e })?;
                 }),
                 RustType::JsValue(js_value) => {
                     if js_value.is_option {
                         Some(quote! {
                             #[allow(deprecated)]
-                            eval.send(#param_name.map(|e| e.internal_get())).map_err(dioxus_use_js::JsError::Eval)?;
+                            eval.send(#param_name.map(|e| e.internal_get())).map_err(|e| dioxus_use_js::JsError::Eval { func: #js_func_name_ident, error: e })?;
                         })
                     } else {
                         Some(quote! {
                             #[allow(deprecated)]
-                            eval.send(#param_name.internal_get()).map_err(dioxus_use_js::JsError::Eval)?;
+                            eval.send(#param_name.internal_get()).map_err(|e| dioxus_use_js::JsError::Eval { func: #js_func_name_ident, error: e })?;
                         })
                     }
                 },
-                RustType::CallBack(_) => None,
+                RustType::Callback(_) => None,
             }
         })
         .collect();
 
-    let js_func_name = &func.name;
     let params_list = func
         .params
         .iter()
         .map(|p| p.name.as_str())
         .collect::<Vec<&str>>()
         .join(", ");
-    let param_declaration_lines = func
+    let param_declarations = func
         .params
         .iter()
         .map(|param| match &param.rust_type {
             RustType::Regular(_) => {
-                format!("let {} = await dioxus.recv();", param.name)
+                format!("let {}=await dioxus.recv();", param.name)
             }
             RustType::JsValue(js_value) => {
                 let param_name = &param.name;
                 if js_value.is_option {
                 format!(
-                    "let {param_name}Temp_ = await dioxus.recv();\nlet {param_name} = null;\nif ({param_name}Temp_ !== null) {{{{ {param_name} = window[{param_name}Temp_] }}}};",
+                    "let {param_name}Temp_=await dioxus.recv();let {param_name}=null;if({param_name}Temp_!==null){{{param_name}=window[{param_name}Temp_]}};",
                 )
             }
             else {
                 format!(
-                    "let {param_name}Temp_ = await dioxus.recv();\nlet {param_name} = window[{param_name}Temp_];",
+                    "let {param_name}Temp_=await dioxus.recv();let {param_name}=window[{param_name}Temp_];",
                 )
             }
             },
-            RustType::CallBack(rust_callback) => {
+            RustType::Callback(rust_callback) => {
                 let name = &param.name;
                 let index = callback_name_to_index.get(name).unwrap();
                 let RustCallback { input, output } = rust_callback;
@@ -899,13 +902,13 @@ fn generate_function_wrapper(func: &FunctionInfo, asset_path: &LitStr) -> TokenS
                     (None, None) => {
                         // no return, but still need to await ack
                         format!(
-                            "const {} = async () => {{{{ dioxus.send([{}, null]); await dioxus.recv(); }}}};",
+                            "const {}=async()=>{{dioxus.send([{},null]);await dioxus.recv();}};",
                             name, index
                         )
                     },
                     (None, Some(_)) => {
                         format!(
-                            "const {} = async () => {{{{ dioxus.send([{}, null]); return await dioxus.recv(); }}}};",
+                            "const {}=async()=>{{dioxus.send([{},null]);return await dioxus.recv();}};",
                             name, index
 
                         )
@@ -913,13 +916,13 @@ fn generate_function_wrapper(func: &FunctionInfo, asset_path: &LitStr) -> TokenS
                     (Some(_), None) => {
                         // no return, but still need to await ack
                         format!(
-                            "const {} = async (value) => {{{{ dioxus.send([{}, value]); await dioxus.recv(); }}}};",
+                            "const {}=async(v)=>{{dioxus.send([{},v]);await dioxus.recv();}};",
                             name, index
                         )
                     },
                     (Some(_), Some(_)) => {
                         format!(
-                            "const {} = async (value) => {{{{ dioxus.send([{}, value]); return await dioxus.recv(); }}}};",
+                            "const {}=async(v)=>{{dioxus.send([{},v]);return await dioxus.recv();}};",
                             name, index
                         )
                     },
@@ -927,61 +930,55 @@ fn generate_function_wrapper(func: &FunctionInfo, asset_path: &LitStr) -> TokenS
             },
         })
         .collect::<Vec<_>>()
-        .join("\n");
-    let mut await_fn = String::new();
+        .join("");
+    let mut maybe_await = String::new();
     if func.is_async {
-        await_fn.push_str("await");
+        maybe_await.push_str("await");
     }
     let call_function = match &func.rust_return_type {
         RustType::Regular(_) => {
-            // eval will fail if returning undefined. undefined happens if there is no return type
-            format!(
-                r#"
-___result___ = {await_fn} {js_func_name}({params_list});
-"#
-            )
+            format!("___result___={maybe_await} {js_func_name}({params_list});")
         }
-        RustType::CallBack(_) => panic!("Cannot be an output type, should have panicked earlier."),
+        RustType::Callback(_) => {
+            unreachable!("This cannot be an output type, the macro should have panicked earlier.")
+        }
         RustType::JsValue(js_value) => {
             let check = if js_value.is_option {
                 // null or undefined is valid, since this is e.g. `Option<JsValue>`
-                "if (___resultValue___ === null || ___resultValue___ === undefined) {{{{ return null; }}}}".to_owned()
+                "if (___resultValue___===null||___resultValue___===undefined){dioxus.send([0,null]);return null;}".to_owned()
             } else {
                 format!(
-                    "if (___resultValue___ === undefined) {{{{ console.error(\"`{js_func_name}` was undefined, but value is needed for JsValue\"); return null; }}}}"
+                    "if (___resultValue___===null||___resultValue___===undefined){{console.error(\"The result of `{js_func_name}` was null or undefined, but a value is needed for JsValue\");dioxus.send([0,null]);return null;}}"
                 )
             };
             format!(
-                r#"
-const ___resultValue___ = {await_fn} {js_func_name}({params_list});
-{check}
-___result___ = "js-value-{js_func_name}-" + crypto.randomUUID();
-window[___result___] = ___resultValue___;
-        "#
+                "const ___resultValue___={maybe_await} {js_func_name}({params_list});{check}___result___=\"js-value-{js_func_name}-\" + crypto.randomUUID();window[___result___]=___resultValue___;"
             )
         }
     };
-    let end_statement = if callback_name_to_index.is_empty() {
-        "if (___result___ === undefined) {{ return null; }}; return ___result___;"
-    } else {
-        "if (___result___ === undefined) {{ dioxus.send([0, null]); }}; dioxus.send([0, ___result___]);"
-    };
-
-    let js_format = format!(
-        r#"
-const {{{{ {js_func_name} }}}} = await import("{{}}");
-{param_declaration_lines}
-let ___result___;
-try {{{{
-{call_function}
-}}}}
-catch (e) {{{{
-console.error("Executing function `{js_func_name}` threw an error:", e);
-___result___ = undefined;
-}}}}
-{end_statement}
-"#
+    let asset_path_string = asset_path.value();
+    // Note: eval will fail if returning undefined. undefined happens if there is no return type
+    let js = format!(
+        "const{{{js_func_name}}}=await import(\"{asset_path_string}\");{param_declarations}let ___result___;try{{{call_function}}}catch(e){{console.error(\"Executing `{js_func_name}` threw:\", e);dioxus.send([1,null]);}}dioxus.send([0,___result___]);return null;"
     );
+    fn to_raw_string_literal(s: &str) -> Literal {
+        let mut hashes = String::from("#");
+        while s.contains(&format!("\"{}", hashes)) {
+            hashes.push('#');
+        }
+
+        let raw = format!("r{h}\"{s}\"{h}", h = hashes);
+        Literal::from_str(&raw).unwrap()
+    }
+    let comment = to_raw_string_literal(&js);
+    let js_in_comment = quote! {
+        #[doc = #comment]
+        fn ___above_is_the_generated_js___() {}
+    };
+    let js_format = js
+        .replace("{", "{{")
+        .replace("}", "}}")
+        .replace(&asset_path_string, "{}");
 
     // Generate parameter types with extracted type information
     let param_types: Vec<_> = func
@@ -990,7 +987,7 @@ ___result___ = undefined;
         .map(|param| {
             let param_name = format_ident!("{}", param.name);
             let type_tokens = param.rust_type.to_tokens();
-            if let RustType::CallBack(_) = param.rust_type {
+            if let RustType::Callback(_) = param.rust_type {
                 quote! { mut #param_name: #type_tokens }
             } else {
                 quote! { #param_name: #type_tokens }
@@ -1045,11 +1042,12 @@ ___result___ = undefined;
                 if matches!(e, dioxus_use_js::SerdeJsonValue::Null) {
                     Ok(())
                 } else {
-                    Err(dioxus_use_js::JsError::Eval(
-                        dioxus::document::EvalError::Serialization(
+                    Err(dioxus_use_js::JsError::Eval {
+                        func: #js_func_name_ident,
+                        error: dioxus::document::EvalError::Serialization(
                             <dioxus_use_js::SerdeJsonError as dioxus_use_js::SerdeDeError>::custom(dioxus_use_js::__BAD_VOID_RETURN.to_owned())
                         )
-                    ))
+                    })
                 }
             })
         }
@@ -1057,134 +1055,115 @@ ___result___ = undefined;
         quote! {}
     };
 
-    let has_no_callbacks = callback_name_to_index.is_empty();
-    let end_statement = if has_no_callbacks {
-        let return_value_mapping = if func.rust_return_type.to_string() == SERDE_VALUE {
-            quote! {
-                .map_err(dioxus_use_js::JsError::Eval)
-            }
-        } else {
-            quote! {
-                .map_err(dioxus_use_js::JsError::Eval)
-                .and_then(|v| dioxus_use_js::serde_json_from_value(v).map_err(|e| dioxus_use_js::JsError::Eval(dioxus::document::EvalError::Serialization(e))))
-            }
-        };
-
-        match &func.rust_return_type {
-            RustType::Regular(_) => {
+    let callback_arms: Vec<TokenStream2> = callback_name_to_index
+        .iter()
+        .map(|(name, index)| {
+            let callback = callback_name_to_info.get(name).unwrap();
+            let callback_call = if let Some(_) = callback.input {
                 quote! {
-                    eval
-                        .await
-                        #return_value_mapping
-                        #void_output_mapping
-                }
-            }
-            RustType::CallBack(_) => {
-                panic!("Cannot be an output type, should have panicked earlier.")
-            }
-            RustType::JsValue(js_value) => {
-                if js_value.is_option {
-                    quote! {
-                    let id: Option<String> = eval
-                        .await
-                        #return_value_mapping?;
-                        #[allow(deprecated)]
-                        Ok(id.map(|e| dioxus_use_js::JsValue::internal_create(e)))
-                    }
-                } else {
-                    quote! {
-                    let id: String = eval
-                        .await
-                        #return_value_mapping?;
-                        #[allow(deprecated)]
-                        Ok(dioxus_use_js::JsValue::internal_create(id))
-                    }
-                }
-            }
-        }
-    } else {
-        let callback_arms: Vec<TokenStream2> = callback_name_to_index
-            .iter()
-            .map(|(name, index)| {
-                let callback = callback_name_to_info.get(name).unwrap();
-                let callback_call = if let Some(_) = callback.input {
-                    quote! {
-                        let value = dioxus_use_js::serde_json_from_value(value).map_err(|e| {
-                            dioxus_use_js::JsError::Eval(
-                                dioxus::document::EvalError::Serialization(e),
-                            )
-                        })?;
-                        let value = match callback(value).await {
-                            Ok(value) => value,
-                            Err(error) => {
-                                return Err(dioxus_use_js::JsError::Callback(error));
-                            }
-                        };
-                    }
-                } else {
-                    quote! {
-                        let value = match callback().await {
-                            Ok(value) => value,
-                            Err(error) => {
-                                return Err(dioxus_use_js::JsError::Callback(error));
-                            }
-                        };
-                    }
-                };
-
-                let callback_send_back = if let Some(_) = callback.output {
-                    quote! {
-                        eval.send(value).map_err(dioxus_use_js::JsError::Eval)?;
-                    }
-                } else {
-                    // send ack
-                    quote! {
-                        eval.send(dioxus_use_js::SerdeJsonValue::Null).map_err(dioxus_use_js::JsError::Eval)?;
-                    }
-                };
-                quote! {
-                    #index => {
-                        #callback_call
-                        #callback_send_back
-                    }
-                }
-            })
-            .collect();
-
-        quote! {
-        loop {
-            let value = eval
-                .recv::<dioxus_use_js::SerdeJsonValue>()
-                .await
-                .map_err(dioxus_use_js::JsError::Eval)?;
-            match value{
-                dioxus_use_js::SerdeJsonValue::Array(values) => {
-                    if values.len() != 2 {
-                        unreachable!("{}", dioxus_use_js::__SEND_VALIDATION_MSG)
-                    }
-                    let mut iter = values.into_iter();
-                    let action_ = match iter.next().unwrap() {
-                        dioxus_use_js::SerdeJsonValue::Number(action_) => action_,
-                        _ => unreachable!("{}", dioxus_use_js::__INDEX_VALIDATION_MSG),
-                    };
-                    let value = iter.next().unwrap();
-                    match action_.as_u64().expect(dioxus_use_js::__INDEX_VALIDATION_MSG) {
-                        0 => {
-                            return dioxus_use_js::serde_json_from_value(value).map_err(|e| {
-                                dioxus_use_js::JsError::Eval(
-                                    dioxus::document::EvalError::Serialization(e),
-                                )
-                            })
-                            #void_output_mapping;
+                    let value = dioxus_use_js::serde_json_from_value(value).map_err(|e| {
+                        dioxus_use_js::JsError::Eval {
+                            func: #js_func_name_ident,
+                            error: dioxus::document::EvalError::Serialization(e),
                         }
-                        #(#callback_arms,)*
-                        _ => unreachable!("{}", dioxus_use_js::__BAD_CALL_MSG),
-                    }
+                    })?;
+                    let value = match callback(value).await {
+                        Ok(value) => value,
+                        Err(error) => {
+                            return Err(dioxus_use_js::JsError::Callback {
+                                func: #js_func_name_ident,
+                                callback: #name,
+                                error: error
+                            });
+                        }
+                    };
                 }
-                _ => unreachable!("{}", dioxus_use_js::__SEND_VALIDATION_MSG),
+            } else {
+                quote! {
+                    let value = match callback().await {
+                        Ok(value) => value,
+                        Err(error) => {
+                            return Err(dioxus_use_js::JsError::Callback {
+                                func: #js_func_name_ident,
+                                callback: #name,
+                                error: error
+                            });
+                        }
+                    };
+                }
+            };
+
+            let callback_send_back = if let Some(_) = callback.output {
+                quote! {
+                    eval.send(value).map_err(|e| {
+                        dioxus_use_js::JsError::Eval {
+                            func: #js_func_name_ident,
+                            error: e
+                        }
+                    })?;
+                }
+            } else {
+                // send ack
+                quote! {
+                    eval.send(dioxus_use_js::SerdeJsonValue::Null).map_err(|e| {
+                        dioxus_use_js::JsError::Eval {
+                            func: #js_func_name_ident,
+                            error: e,
+                        }
+                    })?;
+                }
+            };
+            quote! {
+                #index => {
+                    #callback_call
+                    #callback_send_back
+                }
             }
+        })
+        .collect();
+
+    let end_statement = quote! {
+    loop {
+        let value = eval
+            .recv::<dioxus_use_js::SerdeJsonValue>()
+            .await
+            .map_err(|e| {
+                dioxus_use_js::JsError::Eval {
+                    func: #js_func_name_ident,
+                    error: e,
+                }
+            })?;
+        match value{
+            dioxus_use_js::SerdeJsonValue::Array(values) => {
+                if values.len() != 2 {
+                    unreachable!("{}", dioxus_use_js::__SEND_VALIDATION_MSG)
+                }
+                let mut iter = values.into_iter();
+                let action_ = match iter.next().unwrap() {
+                    dioxus_use_js::SerdeJsonValue::Number(action_) => action_,
+                    _ => unreachable!("{}", dioxus_use_js::__INDEX_VALIDATION_MSG),
+                };
+                let value = iter.next().unwrap();
+                match action_.as_u64().expect(dioxus_use_js::__INDEX_VALIDATION_MSG) {
+                    0 => {
+                        return dioxus_use_js::serde_json_from_value(value).map_err(|e| {
+                            dioxus_use_js::JsError::Eval {
+                                func: #js_func_name_ident,
+                                error: dioxus::document::EvalError::Serialization(e),
+                            }
+                        })
+                        #void_output_mapping;
+                    }
+                    1 => {
+                        return Err(dioxus_use_js::JsError::Threw { func: #js_func_name_ident });
+                    }
+                    #(#callback_arms,)*
+                    _ => unreachable!("{}", dioxus_use_js::__BAD_CALL_MSG),
+                }
+            }
+            _ => unreachable!("{}", dioxus_use_js::__SEND_VALIDATION_MSG),
         }
-        }
+    }
     };
 
     quote! {
@@ -1192,6 +1171,8 @@ ___result___ = undefined;
         #[allow(non_snake_case)]
         pub async fn #func_name #generic_tokens(#(#param_types),*) -> #return_type_tokens {
             const MODULE: Asset = asset!(#asset_path);
+            const #js_func_name_ident: &str = #js_func_name;
+            #js_in_comment
             let js = format!(#js_format, MODULE);
             let mut eval = dioxus::document::eval(js.as_str());
             #(#send_calls)*

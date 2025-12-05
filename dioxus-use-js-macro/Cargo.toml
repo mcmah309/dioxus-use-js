@@ -18,3 +18,4 @@ swc_ecma_parser = { version = "25.0.0", default-features = false }
 swc_ecma_ast = { version = "16.0.0", default-features = false }
 swc_ecma_visit = { version = "16.0.0", default-features = false }
 swc_common = { version = "15.0.0", default-features = false }
+indexmap = "2"

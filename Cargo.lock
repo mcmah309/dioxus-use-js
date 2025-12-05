@@ -1370,6 +1370,7 @@ dependencies = [
 name = "dioxus-use-js-macro"
 version = "0.3.1"
 dependencies = [
+ "indexmap",
  "proc-macro2",
  "quote",
  "swc_common",

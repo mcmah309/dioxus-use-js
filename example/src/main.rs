@@ -1,5 +1,5 @@
 use dioxus::{logger::tracing::Level, prelude::*};
-use dioxus_use_js::{use_js, JsError};
+use dioxus_use_js::{JsError, use_js};
 
 // Use typescript to generate the following functions at compile time
 // with the correct Rust types determined from the source:
@@ -15,7 +15,7 @@ fn main() {
 #[component]
 fn App() -> Element {
     let do_nothing: Resource<Result<String, JsError>> = use_resource(|| async move {
-        let _:() = do_nothing().await?;
+        let _: () = do_nothing().await?;
         Ok("Perfect".to_owned())
     });
 
@@ -25,6 +25,13 @@ fn App() -> Element {
         // Now we can call the generated function directly!
         let output = greeting(from, to).await?;
         Ok(output)
+    });
+
+    let throws_example: Resource<Result<JsError, String>> = use_resource(|| async move {
+        match throws().await {
+            Ok(_) => return Err("This is unexpected output".to_owned()),
+            Err(err) => return Ok(err),
+        };
     });
 
     let js_value_example: Resource<Result<f64, JsError>> = use_resource(|| async move {
@@ -123,13 +130,33 @@ fn App() -> Element {
         let callback = async |json: serde_json::Value| {
             let value1 = json[0].as_i64().unwrap_or_default();
             let value2 = json[1].as_i64().unwrap_or_default();
-            callback5_signal
-                .write()
-                .replace_range(.., &format!("Callback5 called! with values `[{value1}, {value2}]`"));
+            callback5_signal.write().replace_range(
+                ..,
+                &format!("Callback5 called! with values `[{value1}, {value2}]`"),
+            );
             Ok(())
         };
         let _: () = callback5(callback).await?;
         Ok("()".to_owned())
+    });
+
+    let callback6_example: Resource<Result<JsError, String>> = use_resource(move || async move {
+        let callback = async || {
+            #[derive(Debug)]
+            struct TestError(String);
+            impl std::error::Error for TestError {}
+            impl std::fmt::Display for TestError {
+                fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+                    write!(f, "{}", self.0)
+                }
+            }
+            return Err(Box::new(TestError("Error from callback".to_owned()))
+                as Box<dyn std::error::Error + Send + Sync>);
+        };
+        match callback6(callback).await {
+            Ok(_) => return Err("This is unexpected output".to_owned()),
+            Err(err) => return Ok(err),
+        };
     });
 
     rsx!(
@@ -145,6 +172,11 @@ fn App() -> Element {
             section {
                 h2 { "Simple TS Function Call" }
                 {example_result(&function_calling_example.read())}
+            }
+
+            section {
+                h2 { "Function That Throws Example" }
+                {example_result(&throws_example.read())}
             }
 
             section {
@@ -196,12 +228,18 @@ fn App() -> Element {
                     {example_result(&callback5_example.read())}
                     small { "Signal: {callback5_signal}" }
                 }
+                div {
+                    h3 { "Callback That Returns A callback Error:" }
+                    {example_result(&callback6_example.read())}
+                }
             }
         }
     )
 }
 
-fn example_result(result: &Option<Result<impl std::fmt::Display, JsError>>) -> Element {
+fn example_result(
+    result: &Option<Result<impl std::fmt::Display, impl std::fmt::Display>>,
+) -> Element {
     match result {
         Some(Ok(val)) => rsx!(
             p { style: "color:green", "{val}" }
