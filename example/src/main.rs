@@ -66,7 +66,7 @@ fn App() -> Element {
                 .replace_range(.., "Callback1 called!");
             Ok(value * 2.0)
         };
-        let output = useCallback1(2.0, callback).await?;
+        let output = callback1(2.0, callback).await?;
         Ok(output)
     });
 
@@ -82,7 +82,7 @@ fn App() -> Element {
                 .replace_range(.., "Callback2 called!");
             Ok(30.0)
         };
-        let output = useCallback2(callback).await?;
+        let output = callback2(callback).await?;
         Ok(output)
     });
 
@@ -98,7 +98,7 @@ fn App() -> Element {
                 .replace_range(.., "Callback3 called!");
             Ok(())
         };
-        let output = useCallback3(4.0, callback).await?;
+        let output = callback3(4.0, callback).await?;
         Ok(output)
     });
 
@@ -114,8 +114,22 @@ fn App() -> Element {
                 .replace_range(.., "Callback4 called!");
             Ok(())
         };
-        let output = useCallback4(10.0, callback).await?;
+        let output = callback4(10.0, callback).await?;
         Ok(output)
+    });
+
+    let mut callback5_signal = use_signal(|| "Callback5 not yet called :(".to_owned());
+    let callback5_example: Resource<Result<String, JsError>> = use_resource(move || async move {
+        let callback = async |json: serde_json::Value| {
+            let value1 = json[0].as_i64().unwrap_or_default();
+            let value2 = json[1].as_i64().unwrap_or_default();
+            callback5_signal
+                .write()
+                .replace_range(.., &format!("Callback5 called! with values `[{value1}, {value2}]`"));
+            Ok(())
+        };
+        let _: () = callback5(callback).await?;
+        Ok("()".to_owned())
     });
 
     rsx!(
@@ -176,6 +190,11 @@ fn App() -> Element {
                     h3 { "No Input Or Output (expected 20):" }
                     {example_result(&callback4_example.read())}
                     small { "Signal: {callback4_signal}" }
+                }
+                div {
+                    h3 { "No Input Only Callback (expected ()) and [1, 2] for the signal value:" }
+                    {example_result(&callback5_example.read())}
+                    small { "Signal: {callback5_signal}" }
                 }
             }
         }

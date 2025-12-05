@@ -230,7 +230,18 @@ type RustCallback<A, R> = (arg: A) => Promise<R>;
 ```
 
 If input `A` is `void` then the Rust closure will take no input.
-If output `R` is `void` then the Rust closure will return no output.    
+If output `R` is `void` then the Rust closure will return no output.
+
+`A` and `R` can only be:
+- `string` 
+- `number`
+- `boolean`
+- `T | null`
+- `T[]`
+- `Map<T, TT>`
+- `Set<T>`
+- `void`
+- `Json`
 
 #### Example Usage
 

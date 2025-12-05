@@ -10,12 +10,12 @@ use swc_common::comments::{CommentKind, Comments};
 use swc_common::{SourceMap, Span, comments::SingleThreadedComments};
 use swc_common::{SourceMapper, Spanned};
 use swc_ecma_ast::{
-    Decl, ExportDecl, ExportSpecifier, FnDecl, ModuleExportName, NamedExport, Pat, TsType,
-    TsTypeAnn, VarDeclarator,
+    Decl, ExportDecl, ExportSpecifier, FnDecl, NamedExport, Pat, TsType, TsTypeAnn, VarDeclarator,
 };
 use swc_ecma_parser::EsSyntax;
 use swc_ecma_parser::{Parser, StringInput, Syntax, lexer::Lexer};
 use swc_ecma_visit::{Visit, VisitWith};
+use syn::TypeParam;
 use syn::{
     Ident, LitStr, Result, Token,
     parse::{Parse, ParseStream},
@@ -25,13 +25,15 @@ use syn::{
 /// `JsValue<T>`
 const JSVALUE_START: &str = "JsValue";
 const JSVALUE: &str = "dioxus_use_js::JsValue";
-const DEFAULT_INPUT: &str = "impl dioxus_use_js::SerdeSerialize";
-const DEFAULT_OUTPUT: &str = "T: dioxus_use_js::SerdeDeDeserializeOwned";
-const SERDE_VALUE_INPUT: &str = "&dioxus_use_js::SerdeJsonValue";
-const SERDE_VALUE_OUTPUT: &str = "dioxus_use_js::SerdeJsonValue";
+const DEFAULT_GENRIC_INPUT: &str = "impl dioxus_use_js::SerdeSerialize";
+const DEFAULT_GENERIC_OUTPUT: &str = "DeserializeOwned";
+const DEFAULT_OUTPUT_GENERIC_DECLARTION: &str =
+    "DeserializeOwned: dioxus_use_js::SerdeDeDeserializeOwned";
+const SERDE_VALUE: &str = "dioxus_use_js::SerdeJsonValue";
 const JSON: &str = "Json";
 /// `RustCallback<T,TT>`
 const RUST_CALLBACK_JS_START: &str = "RustCallback";
+const UNIT: &str = "()";
 
 #[derive(Debug, Clone)]
 enum ImportSpec {
@@ -203,7 +205,7 @@ struct RustCallback {
 impl ToString for RustCallback {
     fn to_string(&self) -> String {
         let input = self.input.as_deref();
-        let output = self.output.as_deref().unwrap_or("()");
+        let output = self.output.as_deref().unwrap_or(UNIT);
         format!(
             "impl AsyncFnMut({}) -> Result<{}, Box<dyn std::error::Error + Send + Sync>>",
             input.unwrap_or_default(),
@@ -246,13 +248,45 @@ fn strip_parenthesis(mut ts_type: &str) -> &str {
     return ts_type;
 }
 
+/// Splits into correct comma delimited arguments
+fn split_into_args(ts_type: &str) -> Vec<&str> {
+    let mut depth_angle: u16 = 0;
+    let mut depth_square: u16 = 0;
+    let mut depth_paren: u16 = 0;
+    let mut splits = Vec::new();
+    let mut last: usize = 0;
+    for (i, c) in ts_type.char_indices() {
+        match c {
+            '<' => depth_angle += 1,
+            '>' => depth_angle = depth_angle.saturating_sub(1),
+            '[' => depth_square += 1,
+            ']' => depth_square = depth_square.saturating_sub(1),
+            '(' => depth_paren += 1,
+            ')' => depth_paren = depth_paren.saturating_sub(1),
+            ',' if depth_angle == 0 && depth_square == 0 && depth_paren == 0 => {
+                splits.push(ts_type[last..i].trim());
+                last = i + 1;
+            }
+            _ => {}
+        }
+    }
+    let len = ts_type.len();
+    if last != len {
+        let maybe_arg = ts_type[last..len].trim();
+        if !maybe_arg.is_empty() {
+            splits.push(maybe_arg);
+        }
+    }
+    splits
+}
+
 fn ts_type_to_rust_type(ts_type: Option<&str>, is_input: bool) -> RustType {
     let Some(mut ts_type) = ts_type else {
         return RustType::Regular(
             (if is_input {
-                DEFAULT_INPUT
+                DEFAULT_GENRIC_INPUT
             } else {
-                DEFAULT_OUTPUT
+                DEFAULT_GENERIC_OUTPUT
             })
             .to_owned(),
         );
@@ -283,52 +317,69 @@ fn ts_type_to_rust_type(ts_type: Option<&str>, is_input: bool) -> RustType {
         }
     }
     if ts_type.contains(RUST_CALLBACK_JS_START) {
-        if ts_type.starts_with(RUST_CALLBACK_JS_START) {
-            assert!(is_input, "Cannot return a RustCallback: {}", ts_type);
-            let ts_type = &ts_type[RUST_CALLBACK_JS_START.len()..];
-            if ts_type.starts_with("<") && ts_type.ends_with(">") {
-                let inner = &ts_type[1..ts_type.len() - 1];
-                let parts = inner.split(",").collect::<Vec<&str>>();
-                let len = parts.len();
-                if len != 2 {
-                    panic!("A RustCallback type expects two parameters, got: {}", inner);
-                }
-                let input = parts[0].trim();
-                let input = if input == "void" {
-                    None
-                } else {
-                    // `is_input` is false since the deserialized value is only passed to the callback so no point not to give ownership
-                    ts_type_to_rust_type_helper(parts[0].trim(), false, true)
-                };
-                // `RustCallback<T>` or `RustCallback<T,TT>`
-                let output = parts[1].trim();
-                let output = if output == "void" {
-                    None
-                } else {
-                    ts_type_to_rust_type_helper(parts[1].trim(), false, true)
-                };
-                return RustType::CallBack(RustCallback { input, output });
-            } else {
-                panic!("Invalid RustCallback type: {}", ts_type);
-            }
-        } else {
+        if !ts_type.starts_with(RUST_CALLBACK_JS_START) {
             panic!("Nested RustCallback is not valid: {}", ts_type);
         }
-    }
-    RustType::Regular(match ts_type_to_rust_type_helper(ts_type, is_input, true) {
-        Some(value) => value,
-        None => (if is_input {
-            DEFAULT_INPUT
+        assert!(is_input, "Cannot return a RustCallback: {}", ts_type);
+        let ts_type = &ts_type[RUST_CALLBACK_JS_START.len()..];
+        if !(ts_type.starts_with("<") && ts_type.ends_with(">")) {
+            panic!("Invalid RustCallback type: {}", ts_type);
+        }
+        let inner = &ts_type[1..ts_type.len() - 1];
+        let parts = split_into_args(inner);
+        let len = parts.len();
+        if len != 2 {
+            panic!(
+                "A RustCallback type expects two parameters, got: {:?}",
+                parts
+            );
+        }
+        let ts_input = parts[0];
+        let rs_input = if ts_input == "void" {
+            None
         } else {
-            DEFAULT_OUTPUT
+            let rs_input = ts_type_to_rust_type_helper(ts_input, false);
+            if rs_input.is_none() || rs_input.as_ref().is_some_and(|e| e == UNIT) {
+                panic!("Type `{ts_input}` is not a valid input for `{RUST_CALLBACK_JS_START}`");
+            }
+            rs_input
+        };
+        // `RustCallback<T>` or `RustCallback<T,TT>`
+        let ts_output = parts[1];
+        let rs_output = if ts_output == "void" {
+            None
+        } else {
+            let rs_output = ts_type_to_rust_type_helper(ts_output, false);
+            if rs_output.is_none() || rs_output.as_ref().is_some_and(|e| e == UNIT) {
+                panic!("Type `{ts_output}` is not a valid output for `{RUST_CALLBACK_JS_START}`");
+            }
+            rs_output
+        };
+        return RustType::CallBack(RustCallback {
+            input: rs_input,
+            output: rs_output,
+        });
+    }
+    RustType::Regular(match ts_type_to_rust_type_helper(ts_type, is_input) {
+        Some(value) => {
+            if value.contains(UNIT) && (is_input || &value != UNIT) {
+                // Would cause serialization errors since `serde_json::Value::Null` or any, cannot be deserialized into `()`.
+                // We handle `()` special case to account for this if this is the root type in the output. But not input or output nested.
+                panic!("`{}` is not valid in this positioh", ts_type);
+            }
+            value
+        }
+        None => (if is_input {
+            DEFAULT_GENRIC_INPUT
+        } else {
+            DEFAULT_GENERIC_OUTPUT
         })
         .to_owned(),
     })
 }
 
-/// Simple converter, needs null in the second position to enable Option, handles regular ts types.
-/// Does not handle all edge cases
-fn ts_type_to_rust_type_helper(mut ts_type: &str, is_input: bool, is_root: bool) -> Option<String> {
+/// Returns None if could not determine type
+fn ts_type_to_rust_type_helper(mut ts_type: &str, can_be_ref: bool) -> Option<String> {
     ts_type = ts_type.trim();
     ts_type = strip_parenthesis(&mut ts_type);
 
@@ -337,7 +388,7 @@ fn ts_type_to_rust_type_helper(mut ts_type: &str, is_input: bool, is_root: bool)
         // Handle single null union: T | null or null | T
         if parts.len() == 2 && parts.contains(&"null") {
             let inner = parts.iter().find(|p| **p != "null")?;
-            let inner_rust = ts_type_to_rust_type_helper(inner, is_input, is_root)?;
+            let inner_rust = ts_type_to_rust_type_helper(inner, can_be_ref)?;
             return Some(format!("Option<{}>", inner_rust));
         }
         // Unsupported union type
@@ -348,8 +399,8 @@ fn ts_type_to_rust_type_helper(mut ts_type: &str, is_input: bool, is_root: bool)
 
     if ts_type.ends_with("[]") {
         let inner = ts_type.strip_suffix("[]").unwrap();
-        let inner_rust = ts_type_to_rust_type_helper(inner, is_input, false)?;
-        return Some(if is_input && is_root {
+        let inner_rust = ts_type_to_rust_type_helper(inner, false)?;
+        return Some(if can_be_ref {
             format!("&[{}]", inner_rust)
         } else {
             format!("Vec<{}>", inner_rust)
@@ -358,8 +409,8 @@ fn ts_type_to_rust_type_helper(mut ts_type: &str, is_input: bool, is_root: bool)
 
     if ts_type.starts_with("Array<") && ts_type.ends_with(">") {
         let inner = &ts_type[6..ts_type.len() - 1];
-        let inner_rust = ts_type_to_rust_type_helper(inner, is_input, false)?;
-        return Some(if is_input && is_root {
+        let inner_rust = ts_type_to_rust_type_helper(inner, false)?;
+        return Some(if can_be_ref {
             format!("&[{}]", inner_rust)
         } else {
             format!("Vec<{}>", inner_rust)
@@ -368,8 +419,8 @@ fn ts_type_to_rust_type_helper(mut ts_type: &str, is_input: bool, is_root: bool)
 
     if ts_type.starts_with("Set<") && ts_type.ends_with(">") {
         let inner = &ts_type[4..ts_type.len() - 1];
-        let inner_rust = ts_type_to_rust_type_helper(inner, is_input, false)?;
-        if is_input && is_root {
+        let inner_rust = ts_type_to_rust_type_helper(inner, false)?;
+        if can_be_ref {
             return Some(format!("&std::collections::HashSet<{}>", inner_rust));
         } else {
             return Some(format!("std::collections::HashSet<{}>", inner_rust));
@@ -395,9 +446,9 @@ fn ts_type_to_rust_type_helper(mut ts_type: &str, is_input: bool, is_root: bool)
         if let Some(i) = split_index {
             let (key, value) = inner.split_at(i);
             let value = &value[1..]; // skip comma
-            let key_rust = ts_type_to_rust_type_helper(key.trim(), is_input, false)?;
-            let value_rust = ts_type_to_rust_type_helper(value.trim(), is_input, false)?;
-            if is_input && is_root {
+            let key_rust = ts_type_to_rust_type_helper(key.trim(), false)?;
+            let value_rust = ts_type_to_rust_type_helper(value.trim(), false)?;
+            if can_be_ref {
                 return Some(format!(
                     "&std::collections::HashMap<{}, {}>",
                     key_rust, value_rust
@@ -416,45 +467,30 @@ fn ts_type_to_rust_type_helper(mut ts_type: &str, is_input: bool, is_root: bool)
     // Base types
     let rust_type = match ts_type {
         "string" => {
-            if is_input && is_root {
-                "&str"
+            if can_be_ref {
+                Some("&str".to_owned())
             } else {
-                "String"
+                Some("String".to_owned())
             }
         }
-        "number" => "f64",
-        "boolean" => "bool",
-        "void" | "undefined" | "never" | "null" => {
-            if is_input {
-                panic!("`{}` is only valid as an output type", ts_type.to_owned());
-            } else if is_root {
-                "()"
-            } else {
-                // Would cause serialization errors since `serde_json::Value::Null` cannot be deserialized into `()`
-                panic!("`{}` is not valid as nested output type", ts_type);
-            }
-        }
+        "number" => Some("f64".to_owned()),
+        "boolean" => Some("bool".to_owned()),
+        "void" | "undefined" | "never" | "null" => Some(UNIT.to_owned()),
         JSON => {
-            if is_input && is_root {
-                SERDE_VALUE_INPUT
+            if can_be_ref {
+                Some(format!("&{SERDE_VALUE}"))
             } else {
-                SERDE_VALUE_OUTPUT
+                Some(SERDE_VALUE.to_owned())
             }
         }
         "Promise" => {
             panic!("`{}` - nested promises are not valid", ts_type)
         }
         // "any" | "unknown" | "object" | .. etc.
-        _ => {
-            if is_input {
-                DEFAULT_INPUT
-            } else {
-                DEFAULT_OUTPUT
-            }
-        }
+        _ => None,
     };
 
-    Some(rust_type.to_owned())
+    rust_type
 }
 
 /// Splits e.g. `number | null | string` ignoring nesting like `(number | null)[]`
@@ -963,18 +999,26 @@ ___result___ = undefined;
         .collect();
 
     let parsed_type = func.rust_return_type.to_tokens();
-    let (return_type_tokens, generic_tokens) =
-        if func.rust_return_type.to_string() == DEFAULT_OUTPUT {
-            (
-                quote! { Result<T, dioxus_use_js::JsError> },
-                Some(quote! { <#parsed_type> }),
-            )
-        } else {
-            (
-                quote! { Result<#parsed_type, dioxus_use_js::JsError> },
-                None,
-            )
-        };
+    let (return_type_tokens, generic_tokens) = if func.rust_return_type.to_string()
+        == DEFAULT_GENERIC_OUTPUT
+    {
+        let span = func
+            .name_ident
+            .as_ref()
+            .map(|e| e.span())
+            .unwrap_or_else(|| proc_macro2::Span::call_site());
+        let generic = Ident::new(DEFAULT_GENERIC_OUTPUT, span);
+        let generic_decl: TypeParam = syn::parse_str(DEFAULT_OUTPUT_GENERIC_DECLARTION).unwrap();
+        (
+            quote! { Result<#generic, dioxus_use_js::JsError> },
+            Some(quote! { <#generic_decl> }),
+        )
+    } else {
+        (
+            quote! { Result<#parsed_type, dioxus_use_js::JsError> },
+            None,
+        )
+    };
 
     // Generate documentation comment if available - preserve original JSDoc format
     let doc_comment = if func.doc_comment.is_empty() {
@@ -995,7 +1039,7 @@ ___result___ = undefined;
         .unwrap_or_else(|| Ident::new(func.name.as_str(), proc_macro2::Span::call_site()));
 
     // void like returns always send back "Null" as an ack
-    let void_output_mapping = if func.rust_return_type.to_string() == "()" {
+    let void_output_mapping = if func.rust_return_type.to_string() == UNIT {
         quote! {
             .and_then(|e| {
                 if matches!(e, dioxus_use_js::SerdeJsonValue::Null) {
@@ -1015,7 +1059,7 @@ ___result___ = undefined;
 
     let has_no_callbacks = callback_name_to_index.is_empty();
     let end_statement = if has_no_callbacks {
-        let return_value_mapping = if func.rust_return_type.to_string() == SERDE_VALUE_OUTPUT {
+        let return_value_mapping = if func.rust_return_type.to_string() == SERDE_VALUE {
             quote! {
                 .map_err(dioxus_use_js::JsError::Eval)
             }
@@ -1393,7 +1437,7 @@ mod tests {
         );
         assert_eq!(
             ts_type_to_rust_type(Some("string | number"), false).to_string(),
-            "T: dioxus_use_js::SerdeDeDeserializeOwned"
+            "DeserializeOwned"
         );
         assert_eq!(
             ts_type_to_rust_type(Some("string | number | null"), true).to_string(),
@@ -1401,7 +1445,7 @@ mod tests {
         );
         assert_eq!(
             ts_type_to_rust_type(Some("string | number | null"), false).to_string(),
-            "T: dioxus_use_js::SerdeDeDeserializeOwned"
+            "DeserializeOwned"
         );
     }
 
@@ -1413,7 +1457,7 @@ mod tests {
         );
         assert_eq!(
             ts_type_to_rust_type(Some("foo"), false).to_string(),
-            "T: dioxus_use_js::SerdeDeDeserializeOwned"
+            "DeserializeOwned"
         );
 
         assert_eq!(
@@ -1422,7 +1466,7 @@ mod tests {
         );
         assert_eq!(
             ts_type_to_rust_type(Some("any"), false).to_string(),
-            "T: dioxus_use_js::SerdeDeDeserializeOwned"
+            "DeserializeOwned"
         );
         assert_eq!(
             ts_type_to_rust_type(Some("object"), true).to_string(),
@@ -1430,7 +1474,7 @@ mod tests {
         );
         assert_eq!(
             ts_type_to_rust_type(Some("object"), false).to_string(),
-            "T: dioxus_use_js::SerdeDeDeserializeOwned"
+            "DeserializeOwned"
         );
         assert_eq!(
             ts_type_to_rust_type(Some("unknown"), true).to_string(),
@@ -1438,7 +1482,7 @@ mod tests {
         );
         assert_eq!(
             ts_type_to_rust_type(Some("unknown"), false).to_string(),
-            "T: dioxus_use_js::SerdeDeDeserializeOwned"
+            "DeserializeOwned"
         );
 
         assert_eq!(ts_type_to_rust_type(Some("void"), false).to_string(), "()");

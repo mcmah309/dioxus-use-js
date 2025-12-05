@@ -1647,6 +1647,7 @@ version = "0.0.0"
 dependencies = [
  "dioxus",
  "dioxus-use-js",
+ "serde_json",
 ]
 
 [[package]]

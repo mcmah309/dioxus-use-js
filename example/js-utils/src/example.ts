@@ -54,7 +54,7 @@ export function useJsObjectNullable(input: number, value: JsValue<MyObject> | nu
     return result;
 }
 
-export async function useCallback1(startingValue: number, callback: RustCallback<number, number>): Promise<number> {
+export async function callback1(startingValue: number, callback: RustCallback<number, number>): Promise<number> {
     let doubledValue = startingValue * 2;
     let quadrupledValue = await callback(doubledValue);
     if (quadrupledValue != doubledValue * 2) {
@@ -64,7 +64,7 @@ export async function useCallback1(startingValue: number, callback: RustCallback
     return finalValue;
 }
 
-export async function useCallback2(callback: RustCallback<void, number>): Promise<number> {
+export async function callback2(callback: RustCallback<void, number>): Promise<number> {
     let value = await callback();
     if (value != 30) {
         throw new Error("Callback example 2 did not send value of 30");
@@ -73,7 +73,7 @@ export async function useCallback2(callback: RustCallback<void, number>): Promis
     return finalValue;
 }
 
-export async function useCallback3(startingValue: number, callback: RustCallback<number, void>): Promise<number> {
+export async function callback3(startingValue: number, callback: RustCallback<number, void>): Promise<number> {
     let value = await callback(startingValue + 8);
     if (value != null) {
         throw new Error("Callback example 3 did not send back correct value for void");
@@ -81,12 +81,16 @@ export async function useCallback3(startingValue: number, callback: RustCallback
     return startingValue + 4;
 }
 
-export async function useCallback4(startingValue: number, callback: RustCallback<void, void>): Promise<number> {
+export async function callback4(startingValue: number, callback: RustCallback<void, void>): Promise<number> {
     let value = await callback();
     if (value != null) {
         throw new Error("Callback example 4 did not send back correct value for void");
     }
     return startingValue + 10;
+}
+
+export async function callback5(callback: RustCallback<Json, void>) {
+    callback([1,2]);
 }
 
 // Functions not used in example but still generated through `*`
@@ -112,4 +116,17 @@ export function json(input: Json): Json[] {
 // Functions that return promise must be async
 // export function createJsObjectPromise(): Promise<number> {
 //     return 1;
+// }
+
+// export async function callback(callback: RustCallback<[number, number], void>) {
+//     callback([1,2]);
+// }
+
+// type Pair = [number, number];
+// export async function callback(callback: RustCallback<Pair, void>) {
+//     callback([1,2]);
+// }
+
+// export async function callback(callback: RustCallback<JsValue, void>) {
+//     callback(1);
 // }
