@@ -937,7 +937,7 @@ fn generate_function_wrapper(func: &FunctionInfo, asset_path: &LitStr) -> TokenS
     }
     let call_function = match &func.rust_return_type {
         RustType::Regular(_) => {
-            format!("___result___={maybe_await} {js_func_name}({params_list});")
+            format!("_r_={maybe_await} {js_func_name}({params_list});")
         }
         RustType::Callback(_) => {
             unreachable!("This cannot be an output type, the macro should have panicked earlier.")
@@ -945,21 +945,21 @@ fn generate_function_wrapper(func: &FunctionInfo, asset_path: &LitStr) -> TokenS
         RustType::JsValue(js_value) => {
             let check = if js_value.is_option {
                 // null or undefined is valid, since this is e.g. `Option<JsValue>`
-                "if (___resultValue___===null||___resultValue___===undefined){dioxus.send([0,null]);return null;}".to_owned()
+                "if (_v_===null||_v_===undefined){dioxus.send([0,null]);return null;}".to_owned()
             } else {
                 format!(
-                    "if (___resultValue___===null||___resultValue___===undefined){{console.error(\"The result of `{js_func_name}` was null or undefined, but a value is needed for JsValue\");dioxus.send([0,null]);return null;}}"
+                    "if (_v_===null||_v_===undefined){{console.error(\"The result of `{js_func_name}` was null or undefined, but a value is needed for JsValue\");dioxus.send([0,null]);return null;}}"
                 )
             };
             format!(
-                "const ___resultValue___={maybe_await} {js_func_name}({params_list});{check}___result___=\"js-value-{js_func_name}-\" + crypto.randomUUID();window[___result___]=___resultValue___;"
+                "const _v_={maybe_await} {js_func_name}({params_list});{check}_r_=\"js-value-{js_func_name}-\" + crypto.randomUUID();window[_r_]=_v_;"
             )
         }
     };
     let asset_path_string = asset_path.value();
     // Note: eval will fail if returning undefined. undefined happens if there is no return type
     let js = format!(
-        "const{{{js_func_name}}}=await import(\"{asset_path_string}\");{param_declarations}let ___result___;try{{{call_function}}}catch(e){{console.error(\"Executing `{js_func_name}` threw:\", e);dioxus.send([1,null]);}}dioxus.send([0,___result___]);return null;"
+        "const{{{js_func_name}}}=await import(\"{asset_path_string}\");{param_declarations}let _r_;try{{{call_function}}}catch(e){{console.error(\"Executing `{js_func_name}` threw:\", e);dioxus.send([1,null]);}}dioxus.send([0,_r_]);return null;"
     );
     fn to_raw_string_literal(s: &str) -> Literal {
         let mut hashes = String::from("#");
