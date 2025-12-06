@@ -67,7 +67,7 @@ pub enum JsError {
         func: &'static str,
         error: dioxus::document::EvalError,
     },
-    /// A js function that threw a value during execution. The actual error value is logged on the js side as a `console.error`.
+    /// A js function that threw a value during execution. The actual error value is logged on the js side as a warning.
     Threw {
         /// Name of the js function
         func: &'static str,
