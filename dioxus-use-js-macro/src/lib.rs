@@ -952,14 +952,14 @@ fn generate_function_wrapper(func: &FunctionInfo, asset_path: &LitStr) -> TokenS
                 )
             };
             format!(
-                "const _v_={maybe_await} {js_func_name}({params_list});{check}_r_=\"js-value-{js_func_name}-\" + crypto.randomUUID();window[_r_]=_v_;"
+                "const _v_={maybe_await} {js_func_name}({params_list});{check}_r_=\"js-value-{js_func_name}-\"+crypto.randomUUID();window[_r_]=_v_;"
             )
         }
     };
     let asset_path_string = asset_path.value();
     // Note: eval will fail if returning undefined. undefined happens if there is no return type
     let js = format!(
-        "const{{{js_func_name}}}=await import(\"{asset_path_string}\");{param_declarations}let _r_;try{{{call_function}}}catch(e){{console.error(\"Executing `{js_func_name}` threw:\", e);dioxus.send([1,null]);}}dioxus.send([0,_r_]);return null;"
+        "const{{{js_func_name}}}=await import(\"{asset_path_string}\");{param_declarations}let _r_;try{{{call_function}}}catch(e){{console.warn(\"Executing `{js_func_name}` threw:\", e);dioxus.send([1,null]);}}dioxus.send([0,_r_]);return null;"
     );
     fn to_raw_string_literal(s: &str) -> Literal {
         let mut hashes = String::from("#");

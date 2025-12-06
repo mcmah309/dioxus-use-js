@@ -183,7 +183,7 @@ fn App() -> Element {
                 h2 { "`JsValue` Examples" }
                 small {
                     "Check logs for cleanup messages: \
-                    'Successfully dropped JsValue and cleaned up JavaScript object'"
+                    'Cleaned up JavaScript object'"
                 }
                 div {
                     h3 { "Object Method Call (expected 27):" }
