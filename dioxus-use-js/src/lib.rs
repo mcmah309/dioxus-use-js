@@ -1,6 +1,7 @@
 #![cfg_attr(docsrs, feature(doc_cfg))]
 #![doc = include_str!("../README.md")]
 
+use std::sync::atomic::AtomicBool;
 use std::{error::Error, fmt::Display, sync::Arc};
 
 #[cfg(feature = "build")]
@@ -132,19 +133,19 @@ impl std::error::Error for JsError {}
 #[derive(
     serde::Serialize, serde::Deserialize, Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Hash,
 )]
-pub struct JsValue(Arc<Inner>);
+pub struct JsValue(Arc<JsValueInner>);
 
 /// Abstraction used to implement the one time drop
 #[derive(
     serde::Serialize, serde::Deserialize, Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Hash,
 )]
-struct Inner(String);
+struct JsValueInner(String);
 
 impl JsValue {
     #[deprecated(note = "This constructor is for internal use only. Do not use directly.")]
     #[doc(hidden)]
     pub fn internal_create(id: String) -> Self {
-        Self(Arc::new(Inner(id)))
+        Self(Arc::new(JsValueInner(id)))
     }
 
     #[deprecated(note = "This is for internal use only. Do not use directly.")]
@@ -160,23 +161,13 @@ impl Display for JsValue {
     }
 }
 
-impl Drop for Inner {
+impl Drop for JsValueInner {
     fn drop(&mut self) {
         let object_name = std::mem::take(&mut self.0);
         // work around for no async drop trait
         dioxus::core::spawn_forever(async move {
-            let eval = dioxus::document::eval(
-                r#"
-const objectName = await dioxus.recv();
-delete window[objectName];
-return null;
-"#,
-            );
-            if let Err(error) = eval.send(object_name.as_str()) {
-                dioxus::logger::tracing::error!(
-                    "Failed to send object name to clean up `window[\"{object_name}\"]`. Error: {error}"
-                );
-            }
+            let eval =
+                dioxus::document::eval(&format!("delete window[\"{object_name}\"];return null;"));
             if let Err(error) = eval.await {
                 dioxus::logger::tracing::error!(
                     "Failed to clean up JavaScript object `window[\"{object_name}\"]`. Error: {error}"
@@ -187,5 +178,72 @@ return null;
                 );
             }
         });
+    }
+}
+
+pub struct JsNotify(Arc<JsNotifyInner>);
+
+impl JsNotify {
+    pub fn new(notify_on_drop: bool) -> Self {
+        static NOTIFY_ID_COUNTER: std::sync::atomic::AtomicU64 =
+            std::sync::atomic::AtomicU64::new(0);
+        let id = format!(
+            "__js-notify-{}",
+            NOTIFY_ID_COUNTER.fetch_add(1, std::sync::atomic::Ordering::Relaxed)
+        );
+        dioxus::document::eval(&format!(
+            "let r;let p=new Promise((res)=>{{r=res;}});window[\"{id}-p\"]=p;window[\"{id}-r\"]=r;"
+        ));
+        Self(Arc::new(JsNotifyInner {
+            id,
+            notify_on_drop,
+            is_notified: AtomicBool::new(false),
+        }))
+    }
+
+    pub fn notify(&self) {
+        self.0.notify();
+    }
+
+    fn id(&self) -> &str {
+        &self.0.id
+    }
+}
+
+struct JsNotifyInner {
+    id: String,
+    notify_on_drop: bool,
+    is_notified: AtomicBool,
+}
+
+impl JsNotifyInner {
+    fn notify(&self) {
+        if self
+            .is_notified
+            .swap(true, std::sync::atomic::Ordering::AcqRel)
+        {
+            return;
+        }
+        let id = self.id.clone();
+        dioxus::core::spawn_forever(async move {
+            let eval = dioxus::document::eval(&format!(
+                "delete window[\"{id}-p\"];let r=window[\"{id}-r\"];if(r==undefined){{return null;}}r.resolve();delete window[\"{id}-r\"];return null;"
+            ));
+            if let Err(error) = eval.await {
+                dioxus::logger::tracing::error!(
+                    "Failed to notify JavaScript object `window[\"{id}\"]`. Error: {error}"
+                );
+            } else {
+                dioxus::logger::tracing::trace!("Notified JavaScript object `window[\"{id}\"]`.");
+            }
+        });
+    }
+}
+
+impl Drop for JsNotifyInner {
+    fn drop(&mut self) {
+        if self.notify_on_drop {
+            self.notify();
+        }
     }
 }
