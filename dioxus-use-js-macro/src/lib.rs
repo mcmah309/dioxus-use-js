@@ -952,7 +952,7 @@ fn generate_function_wrapper(func: &FunctionInfo, asset_path: &LitStr) -> TokenS
                 )
             };
             format!(
-                "const _v_={maybe_await} {js_func_name}({params_list});{check}_r_=\"js-value-{js_func_name}-\"+crypto.randomUUID();window[_r_]=_v_;"
+                "const _v_={maybe_await} {js_func_name}({params_list});{check}_r_=\"__js-value-{js_func_name}-\"+crypto.randomUUID();window[_r_]=_v_;"
             )
         }
     };
