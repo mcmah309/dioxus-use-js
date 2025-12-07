@@ -10,6 +10,9 @@ pub use build::*;
 
 pub use dioxus_use_js_macro::use_js;
 
+use dioxus::prelude::manganis;
+const WRAPPED_CHANNEL: dioxus::prelude::Asset = dioxus::prelude::asset!("./wrapped_channel.js", dioxus::prelude::AssetOptions::builder().with_hash_suffix(false));
+
 // We export these so downstreams don't need `serde` or `serde_json` directly
 // exports used by macro.
 #[doc(hidden)]
@@ -69,7 +72,7 @@ pub enum JsError {
     },
     /// A js function that threw a value during execution. The actual error value is logged on the js side as a warning.
     Threw {
-        /// Name of the js function
+        /// Name of the js function 
         func: &'static str,
     },
     /// Error occurred during a callback to a rust function

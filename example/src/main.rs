@@ -1,5 +1,6 @@
-use dioxus::{logger::tracing::Level, prelude::*};
+use dioxus::{core::use_drop, logger::tracing::Level, prelude::*};
 use dioxus_use_js::{JsError, use_js};
+use futures::{SinkExt, StreamExt};
 
 // Use typescript to generate the following functions at compile time
 // with the correct Rust types determined from the source:
@@ -7,8 +8,122 @@ use_js!("js-utils/src/example.ts", "assets/example.js"::*);
 // Use pure js
 use_js!("assets/other.js"::*);
 
+#[allow(non_snake_case)]
+pub async fn on_click2(
+    mut invoke_cb: impl AsyncFnMut(Vec<f64>) -> Result<(), Box<dyn std::error::Error + Send + Sync>>,
+) -> Result<(), dioxus_use_js::JsError> {
+    const MODULE: Asset = asset!("assets/example.js", AssetOptions::builder().with_hash_suffix(false));
+    const FUNC_NAME: &str = "on_click";
+    #[doc = r#""#]
+    fn ___above_is_the_generated_js___() {}
+
+    // let js = format!(
+    //     "const{{DioxusRequestResponse}}=await import(\"wrapped_channel.js\");const dioxus = new DioxusRequestResponse(dioxus);const{{on_click}}=await import(\"{}\");const invoke_cb=async(v)=>{{dioxus.req(2,v);}};const cb_dropped=async()=>{{await dioxus.req(3,null);}};let _r_;try{{_r_=await on_click(invoke_cb, cb_dropped);}}catch(e){{console.warn(\"Executing `on_click` threw:\", e);dioxus.req(1,null);}}dioxus.req(0,_r_);return null;",
+    //     MODULE
+    // );
+    let js = r#"
+const {
+    DioxusRequestResponse
+} = await import("wrapped_channel.js");
+let _d_ = new DioxusRequestResponse(dioxus);
+_d_.start();
+const {
+    on_click
+} = await import("assets/example.js");
+const invoke_cb = async (v) => {
+    await _d_.req(2, v);
+};
+const cb_dropped = async () => {
+    await _d_.req(3, null);
+};
+try {
+    let _r_ = await on_click(invoke_cb, cb_dropped);
+    _d_.ok(_r_);
+} catch (e) {
+    console.warn("Executing `on_click` threw:", e);
+    _d_.err();
+}
+_d_.req(0, _r_);
+return null;
+"#;
+
+    let mut eval = dioxus::document::eval(js);
+    loop {
+        let value = eval
+            .recv::<dioxus_use_js::SerdeJsonValue>()
+            .await
+            .map_err(|e| dioxus_use_js::JsError::Eval {
+                func: FUNC_NAME,
+                error: e,
+            })?;
+        match value {
+            dioxus_use_js::SerdeJsonValue::Array(values) => {
+                if values.len() != 2 || values.len() != 3 { // todo
+                    unreachable!("{}", dioxus_use_js::__SEND_VALIDATION_MSG)
+                }
+                let mut iter = values.into_iter();
+                let action_ = match iter.next().unwrap() {
+                    dioxus_use_js::SerdeJsonValue::Number(action_) => action_,
+                    _ => unreachable!("{}", dioxus_use_js::__INDEX_VALIDATION_MSG),
+                };
+                let value = iter.next().unwrap();
+                match action_
+                    .as_u64()
+                    .expect(dioxus_use_js::__INDEX_VALIDATION_MSG)
+                {
+                    0 => {
+                        return dioxus_use_js::serde_json_from_value(value).map_err(|e|{
+                            dioxus_use_js::JsError::Eval {
+                                func:FUNC_NAME,error:dioxus::document::EvalError::Serialization(e),
+                            }
+                        }).and_then(|e|{
+                            if matches!(e,dioxus_use_js::SerdeJsonValue::Null){
+                                Ok(())
+                            }else {
+                                Err(dioxus_use_js::JsError::Eval {
+                                    func:FUNC_NAME,error:dioxus::document::EvalError::Serialization(<dioxus_use_js::SerdeJsonError as dioxus_use_js::SerdeDeError> ::custom(dioxus_use_js::__BAD_VOID_RETURN.to_owned()))
+                                })
+                            }
+                        });
+                    }
+                    1 => {
+                        return Err(dioxus_use_js::JsError::Threw { func: FUNC_NAME });
+                    }
+                    2u64 => {
+                        dioxus::prelude::spawn( async move {
+                        let value = dioxus_use_js::serde_json_from_value(value).map_err(|e| {
+                            dioxus_use_js::JsError::Eval {
+                                func: FUNC_NAME,
+                                error: dioxus::document::EvalError::Serialization(e),
+                            }
+                        })?;
+                        let value = match invoke_cb(value).await {
+                            Ok(value) => value,
+                            Err(error) => {
+                                return Err(dioxus_use_js::JsError::Callback {
+                                    func: FUNC_NAME,
+                                    callback: "invoke_cb",
+                                    error: error,
+                                });
+                            }
+                        };
+                        eval.send(dioxus_use_js::SerdeJsonValue::Null)
+                            .map_err(|e| dioxus_use_js::JsError::Eval {
+                                func: FUNC_NAME,
+                                error: e,
+                            })?;
+                        });
+                    }
+                    _ => unreachable!("{}", dioxus_use_js::__BAD_CALL_MSG),
+                }
+            }
+            _ => unreachable!("{}", dioxus_use_js::__SEND_VALIDATION_MSG),
+        }
+    }
+}
+
 fn main() {
-    dioxus::logger::init(Level::TRACE).unwrap();
+    dioxus::logger::init(Level::WARN).unwrap();
     launch(App);
 }
 
@@ -159,6 +274,37 @@ fn App() -> Element {
         };
     });
 
+    let token = use_hook(|| tokio_util::sync::CancellationToken::new());
+    let drop_token = token.clone();
+    use_drop(move || {
+        drop_token.cancel();
+    });
+    let mut on_click_signal: Signal<(f64, f64)> = use_signal(|| (0.0, 0.0));
+    let callback7_example: Resource<Result<String, JsError>> = use_resource(move || {
+        let value = token.clone();
+        async move {
+            // let dropped = async move || {
+            //     error!("Entering");
+            //     value.cancelled().await;
+            //     error!("Leaving");
+            //     Ok(())
+            // };
+            let callback = async |points: Vec<f64>| {
+                warn!("Hit");
+                if points.len() != 2 {
+                    panic!("Unexpected nimber of arguments");
+                }
+                let x = points[0];
+                let y = points[1];
+                on_click_signal.set((x, y));
+                Ok(())
+            };
+
+            on_click2(callback).await?;
+            Ok("()".to_owned())
+        }
+    });
+
     rsx!(
         main { style: "padding: 2rem; font-family: sans-serif; line-height: 1.6;",
 
@@ -231,6 +377,11 @@ fn App() -> Element {
                 div {
                     h3 { "Callback That Returns A callback Error:" }
                     {example_result(&callback6_example.read())}
+                }
+                div {
+                    h3 { "Callback With Click Event (click anywhere on the document):" }
+                    {example_result(&callback7_example.read())}
+                    small { "Last Click Position: ({on_click_signal.read().0}, {on_click_signal.read().1})" }
                 }
             }
         }

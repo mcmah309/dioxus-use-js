@@ -94,11 +94,27 @@ export async function callback4(startingValue: number, callback: RustCallback<vo
 }
 
 export async function callback5(callback: RustCallback<Json, void>) {
-    callback([1,2]);
+    callback([1, 2]);
 }
 
 export async function callback6(callback: RustCallback<void, void>): Promise<void> {
     callback();
+}
+
+type Drop = () => Promise<void>;
+export async function on_click(invoke_cb: RustCallback<number[], void>, drop: Drop): Promise<void> {
+    let handler = async (e: PointerEvent) => {
+        console.warn("Clicked");
+        await invoke_cb([e.pageX, e.pageY]);
+        console.warn("returned");
+    };
+
+    document.addEventListener('click', handler);
+    console.warn("Added listener");
+    await drop();
+    console.warn("Dropping listener");
+    document.removeEventListener('click', handler);
+    console.warn("Dropped listener");
 }
 
 // Functions not used in example but still generated through `*`

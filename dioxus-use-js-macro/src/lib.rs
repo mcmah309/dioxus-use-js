@@ -1058,8 +1058,9 @@ fn generate_function_wrapper(func: &FunctionInfo, asset_path: &LitStr) -> TokenS
     let callback_arms: Vec<TokenStream2> = callback_name_to_index
         .iter()
         .map(|(name, index)| {
-            let callback = callback_name_to_info.get(name).unwrap();
-            let callback_call = if let Some(_) = callback.input {
+            let callback_name = format_ident!("{}", name);
+            let callback_info = callback_name_to_info.get(name).unwrap();
+            let callback_call = if let Some(_) = callback_info.input {
                 quote! {
                     let value = dioxus_use_js::serde_json_from_value(value).map_err(|e| {
                         dioxus_use_js::JsError::Eval {
@@ -1067,7 +1068,7 @@ fn generate_function_wrapper(func: &FunctionInfo, asset_path: &LitStr) -> TokenS
                             error: dioxus::document::EvalError::Serialization(e),
                         }
                     })?;
-                    let value = match callback(value).await {
+                    let value = match #callback_name(value).await {
                         Ok(value) => value,
                         Err(error) => {
                             return Err(dioxus_use_js::JsError::Callback {
@@ -1080,7 +1081,7 @@ fn generate_function_wrapper(func: &FunctionInfo, asset_path: &LitStr) -> TokenS
                 }
             } else {
                 quote! {
-                    let value = match callback().await {
+                    let value = match #callback_name().await {
                         Ok(value) => value,
                         Err(error) => {
                             return Err(dioxus_use_js::JsError::Callback {
@@ -1093,7 +1094,7 @@ fn generate_function_wrapper(func: &FunctionInfo, asset_path: &LitStr) -> TokenS
                 }
             };
 
-            let callback_send_back = if let Some(_) = callback.output {
+            let callback_send_back = if let Some(_) = callback_info.output {
                 quote! {
                     eval.send(value).map_err(|e| {
                         dioxus_use_js::JsError::Eval {
