@@ -1101,9 +1101,34 @@ fn generate_function_wrapper(func: &FunctionInfo, asset_path: &LitStr) -> TokenS
         .map(|(name, index)| {
             let callback_name = format_ident!("{}", name);
             let callback_info = callback_name_to_info.get(name).unwrap();
-            // todo each call should spawn so multiple can be inflight at the same time
-            let callback_call = if let Some(_) = callback_info.input {
-                quote! {
+            let callback_call = match (&callback_info.input, &callback_info.output) {
+                (None, None) => {
+                    quote! {
+                    dioxus::prelude::spawn({let responder = responder.clone(); async move {
+                        let result = #callback_name(()).await;
+
+                        match result {
+                            // send ack
+                            Ok(_) => responder.respond(request_id, true, dioxus_use_js::SerdeJsonValue::Null),
+                            Err(error) => responder.respond(request_id, false, error),
+                        }
+                    }});
+                    }
+                },
+                (None, Some(_)) => {
+                    quote! {
+                    dioxus::prelude::spawn({let responder = responder.clone(); async move {
+                        let result = #callback_name(()).await;
+
+                        match result {
+                            Ok(value) => responder.respond(request_id, true, value),
+                            Err(error) => responder.respond(request_id, false, error),
+                        }
+                    }});
+                }
+                },
+                (Some(_), None) => {
+                    quote! {
                     let value = values.next().unwrap();
                     let value = match dioxus_use_js::serde_json_from_value(value) {
                         Ok(value) => value,
@@ -1112,34 +1137,43 @@ fn generate_function_wrapper(func: &FunctionInfo, asset_path: &LitStr) -> TokenS
                             continue;
                         }
                     };
-                    let result = #callback_name(value).await;
-                }
-            } else {
-                quote! {
-                    let result = #callback_name(()).await;
-                }
-            };
 
-            let callback_send_back = if let Some(_) = callback_info.output {
-                quote! {
-                    match result {
-                        Ok(value) => responder.respond(request_id, true, value),
-                        Err(error) => responder.respond(request_id, false, error),
-                    }
+                    dioxus::prelude::spawn({let responder = responder.clone(); async move {
+                        let result = #callback_name(value).await;
+
+                        match result {
+                            // send ack
+                            Ok(_) => responder.respond(request_id, true, dioxus_use_js::SerdeJsonValue::Null),
+                            Err(error) => responder.respond(request_id, false, error),
+                        }
+                    }});
                 }
-            } else {
-                quote! {
-                    match result {
-                        // send ack
-                        Ok(_) => responder.respond(request_id, true, dioxus_use_js::SerdeJsonValue::Null),
-                        Err(error) => responder.respond(request_id, false, error),
-                    }
+                },
+                (Some(_), Some(_)) => {
+                    quote! {
+                    let value = values.next().unwrap();
+                    let value = match dioxus_use_js::serde_json_from_value(value) {
+                        Ok(value) => value,
+                        Err(value) => {
+                            responder.respond(request_id, false, dioxus_use_js::SerdeJsonValue::String(dioxus_use_js::__UNEXPECTED_CALLBACK_TYPE.to_owned()));
+                            continue;
+                        }
+                    };
+
+                    dioxus::prelude::spawn({let responder = responder.clone(); async move {
+                        let result = #callback_name(value).await;
+
+                        match result {
+                            Ok(value) => responder.respond(request_id, true, value),
+                            Err(error) => responder.respond(request_id, false, error),
+                        }
+                    }});
+                }
                 }
             };
             quote! {
                 #index => {
                     #callback_call
-                    #callback_send_back
                 }
             }
         })
@@ -1148,7 +1182,7 @@ fn generate_function_wrapper(func: &FunctionInfo, asset_path: &LitStr) -> TokenS
     let callback_spawn = if !callback_arms.is_empty() {
         quote! {
             dioxus::prelude::spawn({
-                let mut eval = dioxus_use_js::EvalDrop::new(eval.clone());
+                let mut eval = dioxus_use_js::EvalDrop::new(eval);
                     async move {
                         let responder = dioxus_use_js::CallbackResponder::new(&invocation_id);
                         loop {
@@ -1217,12 +1251,12 @@ fn generate_function_wrapper(func: &FunctionInfo, asset_path: &LitStr) -> TokenS
              return Err(dioxus_use_js::JsError::Threw { func: #js_func_name_ident });
         }
     };
-
+    let macro_invocation_id = uuid::Uuid::now_v7().to_string();
     let js_string = if has_callbacks {
         quote! {
-            static INVOCATION_ID: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
-            // todo change to include call location
-            let invocation_id = format!("{}{}", #js_func_name, INVOCATION_ID.fetch_add(1, std::sync::atomic::Ordering::SeqCst));
+            static INVOCATION_NUM: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+            // Each invocation id garuntees a unique namespace for the callback invocation where new requested/responded and everything clean/promises rejected on drop.
+            let invocation_id = format!("{}{}", #macro_invocation_id, INVOCATION_NUM.fetch_add(1, std::sync::atomic::Ordering::Relaxed));
             let js = format!(#js_format, MODULE, &invocation_id);
         }
     } else {

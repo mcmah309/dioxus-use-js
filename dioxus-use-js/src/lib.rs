@@ -2,7 +2,6 @@
 #![doc = include_str!("../README.md")]
 
 use std::ops::{Deref, DerefMut};
-use std::sync::atomic::AtomicBool;
 use std::{error::Error, fmt::Display, sync::Arc};
 
 #[cfg(feature = "build")]
@@ -54,12 +53,7 @@ fn _send_sync_error_assert() {
     fn is_sync<T: Sync>(_: &T) {}
     fn is_error<T: Error>(_: &T) {}
 
-    let o: JsError = JsError::Callback {
-        func: "",
-        callback: "",
-        error: Box::new(std::io::Error::new(std::io::ErrorKind::Other, ""))
-            as Box<dyn Error + Send + Sync>,
-    };
+    let o: JsError = JsError::Threw { func: "" };
     is_send(&o);
     is_sync(&o);
     is_error(&o);
@@ -81,15 +75,6 @@ pub enum JsError {
         /// Name of the js function
         func: &'static str,
     },
-    /// Error occurred during a callback to a rust function
-    Callback {
-        /// The name of the function
-        func: &'static str,
-        /// The name of the callback
-        callback: &'static str,
-        /// The error from the callback
-        error: Box<dyn Error + Send + Sync>,
-    },
 }
 
 impl std::fmt::Display for JsError {
@@ -103,17 +88,6 @@ impl std::fmt::Display for JsError {
                     f,
                     "JavaScript function '{}' threw an error during execution",
                     name
-                )
-            }
-            JsError::Callback {
-                func: name,
-                callback,
-                error,
-            } => {
-                write!(
-                    f,
-                    "JavaScript function '{}' callback '{}' error: {}",
-                    name, callback, error
                 )
             }
         }
@@ -226,20 +200,23 @@ impl Drop for EvalDrop {
 
 /// Used in generated code.
 #[doc(hidden)]
-pub struct CallbackResponder(Eval);
+#[derive(Clone)]
+pub struct CallbackResponder(Arc<CallbackResponderInner>);
+
+struct CallbackResponderInner(Eval);
 
 impl CallbackResponder {
     pub fn new(invocation_id: &str) -> Self {
         // r = [id, ok, data], i = id, o = ok, d = data, f = window[function_id], x = f[id] = [resolve, reject]
-        CallbackResponder(dioxus::document::eval(&format!(
+        CallbackResponder(Arc::new(CallbackResponderInner(dioxus::document::eval(&format!(
             "while(true){{let r=await dioxus.recv();if(!Array.isArray(r))break;let f=window[\"{invocation_id}\"];if(f==null)break;let i=r[0],o=r[1],d=r[2],x=f[i];delete f[i];if(o)x[0](d);else x[1](d);}}",
-        )))
+        )))))
     }
 
     pub fn respond<T: serde::Serialize>(&self, request_id: u64, is_ok: bool, data: T) {
         let payload = (request_id, is_ok, data);
 
-        let result = self.0.send(payload);
+        let result = self.0.0.send(payload);
         if let Err(e) = result {
             dioxus::logger::tracing::error!(
                 "Failed to send callback response for invocation '{}' request '{}': {}",
@@ -251,7 +228,7 @@ impl CallbackResponder {
     }
 }
 
-impl Drop for CallbackResponder {
+impl Drop for CallbackResponderInner {
     fn drop(&mut self) {
         // Send a non-array value to break the loop
         let result = self.0.send(serde_json::Value::Null);
