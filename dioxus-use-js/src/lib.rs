@@ -1,6 +1,7 @@
 #![cfg_attr(docsrs, feature(doc_cfg))]
 #![doc = include_str!("../README.md")]
 
+use std::ops::{Deref, DerefMut};
 use std::sync::atomic::AtomicBool;
 use std::{error::Error, fmt::Display, sync::Arc};
 
@@ -9,6 +10,7 @@ mod build;
 #[cfg(feature = "build")]
 pub use build::*;
 
+use dioxus::document;
 pub use dioxus_use_js_macro::use_js;
 
 // We export these so downstreams don't need `serde` or `serde_json` directly
@@ -26,7 +28,7 @@ pub use serde_json::Value as SerdeJsonValue;
 #[doc(hidden)]
 pub use serde_json::from_value as serde_json_from_value;
 #[doc(hidden)]
-pub const __SEND_VALIDATION_MSG: &str = "Should always send back a value that is an array of two.";
+pub const __CALLBACK_SEND_VALIDATION_MSG: &str = "Callbacks should always send back a value that is an array of three.";
 #[doc(hidden)]
 pub const __INDEX_VALIDATION_MSG: &str = "The first sent back value should always be a u64.";
 #[doc(hidden)]
@@ -181,9 +183,9 @@ impl Drop for JsValueInner {
     }
 }
 
-pub struct JsNotify(Arc<JsNotifyInner>);
+pub struct JsNotifyOnce(Arc<JsNotifyOnceInner>);
 
-impl JsNotify {
+impl JsNotifyOnce {
     pub fn new(notify_on_drop: bool) -> Self {
         static NOTIFY_ID_COUNTER: std::sync::atomic::AtomicU64 =
             std::sync::atomic::AtomicU64::new(0);
@@ -194,7 +196,7 @@ impl JsNotify {
         dioxus::document::eval(&format!(
             "let r;let p=new Promise((res)=>{{r=res;}});window[\"{id}-p\"]=p;window[\"{id}-r\"]=r;"
         ));
-        Self(Arc::new(JsNotifyInner {
+        Self(Arc::new(JsNotifyOnceInner {
             id,
             notify_on_drop,
             is_notified: AtomicBool::new(false),
@@ -210,13 +212,13 @@ impl JsNotify {
     }
 }
 
-struct JsNotifyInner {
+struct JsNotifyOnceInner {
     id: String,
     notify_on_drop: bool,
     is_notified: AtomicBool,
 }
 
-impl JsNotifyInner {
+impl JsNotifyOnceInner {
     fn notify(&self) {
         if self
             .is_notified
@@ -240,10 +242,51 @@ impl JsNotifyInner {
     }
 }
 
-impl Drop for JsNotifyInner {
+impl Drop for JsNotifyOnceInner {
     fn drop(&mut self) {
         if self.notify_on_drop {
             self.notify();
+        }
+    }
+}
+
+/// When a normal Eval drops. It does not signal to the channel that it has been dropped. Thus any `await dioxus.recv()`
+/// will be awaiting forever. Thus we only use one `await dioxus.recv()` after all the parameters have been sent to
+/// signal drop. This struct will send the value to resolve that promise on drop.
+#[doc(hidden)]
+pub struct EvalDrop(document::Eval);
+
+impl EvalDrop {
+    /// Create a new EvalDrop from a dioxus eval
+    pub fn new(eval: document::Eval) -> Self {
+        Self(eval)
+    }
+}
+
+impl Deref for EvalDrop {
+    type Target = document::Eval;
+
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
+
+impl DerefMut for EvalDrop {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.0
+    }
+}
+
+impl Drop for EvalDrop {
+    fn drop(&mut self) {
+        dioxus::logger::tracing::error!(
+                "Going Dropped",
+            );
+        if let Err(e) = self.0.send(serde_json::Value::Null) {
+            dioxus::logger::tracing::error!(
+                "Going Failed to notify dropped EvalDrop instance: {}",
+                e
+            );
         }
     }
 }
