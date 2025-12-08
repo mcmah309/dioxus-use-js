@@ -224,6 +224,7 @@ impl Drop for EvalDrop {
     }
 }
 
+/// Used in generated code.
 #[doc(hidden)]
 pub struct CallbackResponder(Eval);
 
@@ -257,32 +258,6 @@ impl Drop for CallbackResponder {
         if let Err(e) = result {
             dioxus::logger::tracing::error!("Failed to shut down callback responder: {}", e);
         }
-    }
-}
-
-pub fn __callback_respond<T: SerdeSerialize>(
-    function_id: &str,
-    request_id: u64,
-    is_ok: bool,
-    data: T,
-) {
-    // To decrease binary size since parent is generic so it will be monomorphized
-    #[inline(never)]
-    fn _helper(function_id: &str, request_id: u64, is_ok: bool) -> Eval {
-        // The first index holds the function pointer to `resolve` and the second to reject `reject`
-        let index = if is_ok { "0" } else { "1" };
-        dioxus::document::eval(&format!(
-            "let v=await dioxus.recv();let f=window[\"{function_id}\"];if(f==undefined){{return null;}}let r=f[\"{request_id}\"][{index}];if(r==undefined){{return null;}}delete f[\"{request_id}\"];r(v);return null;"
-        ))
-    }
-    let eval = _helper(function_id, request_id, is_ok);
-    if let Err(e) = eval.send(data) {
-        dioxus::logger::tracing::error!(
-            "Failed to send callback response for function '{}' request '{}': {}",
-            function_id,
-            request_id,
-            e
-        );
     }
 }
 
