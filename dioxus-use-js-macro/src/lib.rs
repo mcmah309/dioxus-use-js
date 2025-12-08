@@ -36,6 +36,8 @@ const JSON: &str = "Json";
 /// `RustCallback<T,TT>`
 const RUST_CALLBACK_JS_START: &str = "RustCallback";
 const UNIT: &str = "()";
+const DROP_TYPE: &str = "Drop";
+const DROP_NAME: &str = "drop";
 
 #[derive(Debug, Clone)]
 enum ImportSpec {
@@ -104,6 +106,15 @@ struct ParamInfo {
     #[allow(unused)]
     js_type: Option<String>,
     rust_type: RustType,
+}
+
+impl ParamInfo {
+    fn is_drop(&self) -> bool {
+        match self.js_type.as_ref() {
+            Some(js_type) => js_type == DROP_TYPE,
+            None => self.name == DROP_NAME,
+        }
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -845,6 +856,9 @@ fn generate_function_wrapper(func: &FunctionInfo, asset_path: &LitStr) -> TokenS
         .params
         .iter()
         .flat_map(|param| {
+            if param.is_drop() {
+                return None;
+            }
             let param_name = format_ident!("{}", param.name);
             match &param.rust_type {
                 RustType::Regular(_) => Some(quote! {
@@ -885,7 +899,11 @@ fn generate_function_wrapper(func: &FunctionInfo, asset_path: &LitStr) -> TokenS
     let param_declarations = func
         .params
         .iter()
-        .map(|param| match &param.rust_type {
+        .map(|param| {
+            if param.is_drop() {
+                return format!("let {}=_dp_;", param.name);
+            }
+            match &param.rust_type {
             RustType::Regular(_) => {
                 format!("let {}=await dioxus.recv();", param.name)
             }
@@ -936,7 +954,7 @@ fn generate_function_wrapper(func: &FunctionInfo, asset_path: &LitStr) -> TokenS
                     },
                 }
             },
-        })
+        }})
         .collect::<Vec<_>>()
         .join("");
     let mut maybe_await = String::new();
@@ -964,16 +982,16 @@ fn generate_function_wrapper(func: &FunctionInfo, asset_path: &LitStr) -> TokenS
             )
         }
     };
-    let drop_handle= if has_callbacks {
-        "let _d_;let drop=new Promise((r)=>_d_=r);(async()=>{await dioxus.rev();dioxus.close();_d_();_a_=false;let w=window[_i_];delete window[_i_];for(const[o, e] of Object.values(w)){e(new Error(\"Channel destroyed\"));}})();"
-    }
-    else {
-        "let _d_;let drop=new Promise((r)=>_d_=r);(async()=>{await dioxus.rev();dioxus.close();_d_();})();"
+    let drop_declare = "let _d_;let _dp_=new Promise((r)=>_d_=r);";
+    let drop_handle = if has_callbacks {
+        "(async()=>{await dioxus.recv();dioxus.close();_d_();_a_=false;let w=window[_i_];delete window[_i_];for(const[o, e] of Object.values(w)){e(new Error(\"Channel destroyed\"));}})();"
+    } else {
+        "(async()=>{await dioxus.recv();dioxus.close();_d_();})();"
     };
     let asset_path_string = asset_path.value();
     // Note: eval will fail if returning undefined. undefined happens if there is no return type
     let js = format!(
-        "const{{{js_func_name}}}=await import(\"{asset_path_string}\");{prepare_callbacks}{param_declarations}{drop_handle}try{{{call_function}}}catch(e){{console.warn(\"Executing `{js_func_name}` threw:\", e);return [false,null];}}"
+        "const{{{js_func_name}}}=await import(\"{asset_path_string}\");{prepare_callbacks}{drop_declare}{param_declarations}{drop_handle}try{{{call_function}}}catch(e){{console.warn(\"Executing `{js_func_name}` threw:\", e);return [false,null];}}"
     );
     fn to_raw_string_literal(s: &str) -> Literal {
         let mut hashes = String::from("#");
@@ -1004,13 +1022,16 @@ fn generate_function_wrapper(func: &FunctionInfo, asset_path: &LitStr) -> TokenS
     let param_types: Vec<_> = func
         .params
         .iter()
-        .map(|param| {
+        .filter_map(|param| {
+            if param.is_drop() {
+                return None;
+            }
             let param_name = format_ident!("{}", param.name);
             let type_tokens = param.rust_type.to_tokens();
             if let RustType::Callback(_) = param.rust_type {
-                quote! { mut #param_name: #type_tokens }
+                Some(quote! { mut #param_name: #type_tokens })
             } else {
-                quote! { #param_name: #type_tokens }
+                Some(quote! { #param_name: #type_tokens })
             }
         })
         .collect();
