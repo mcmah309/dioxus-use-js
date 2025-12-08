@@ -220,7 +220,7 @@ impl ToString for RustCallback {
         let input = self.input.as_deref();
         let output = self.output.as_deref().unwrap_or(UNIT);
         format!(
-            "dioxus::core::Callback<{},impl Future<Output = Result<{}, dioxus_use_js::SerdeJsonValue>> + 'static>",
+            "dioxus::core::Callback<{}, impl Future<Output = Result<{}, dioxus_use_js::SerdeJsonValue>> + 'static>",
             input.unwrap_or("()"),
             output
         )
