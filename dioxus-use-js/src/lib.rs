@@ -183,73 +183,6 @@ impl Drop for JsValueInner {
     }
 }
 
-pub struct JsNotifyOnce(Arc<JsNotifyOnceInner>);
-
-impl JsNotifyOnce {
-    pub fn new(notify_on_drop: bool) -> Self {
-        static NOTIFY_ID_COUNTER: std::sync::atomic::AtomicU64 =
-            std::sync::atomic::AtomicU64::new(0);
-        let id = format!(
-            "__js-notify-{}",
-            NOTIFY_ID_COUNTER.fetch_add(1, std::sync::atomic::Ordering::Relaxed)
-        );
-        dioxus::document::eval(&format!(
-            "let r;let p=new Promise((res)=>{{r=res;}});window[\"{id}-p\"]=p;window[\"{id}-r\"]=r;"
-        ));
-        Self(Arc::new(JsNotifyOnceInner {
-            id,
-            notify_on_drop,
-            is_notified: AtomicBool::new(false),
-        }))
-    }
-
-    pub fn notify(&self) {
-        self.0.notify();
-    }
-
-    fn id(&self) -> &str {
-        &self.0.id
-    }
-}
-
-struct JsNotifyOnceInner {
-    id: String,
-    notify_on_drop: bool,
-    is_notified: AtomicBool,
-}
-
-impl JsNotifyOnceInner {
-    fn notify(&self) {
-        if self
-            .is_notified
-            .swap(true, std::sync::atomic::Ordering::AcqRel)
-        {
-            return;
-        }
-        let id = self.id.clone();
-        dioxus::core::spawn_forever(async move {
-            let eval = dioxus::document::eval(&format!(
-                "delete window[\"{id}-p\"];let r=window[\"{id}-r\"];if(r==undefined){{return null;}}r.resolve();delete window[\"{id}-r\"];return null;"
-            ));
-            if let Err(error) = eval.await {
-                dioxus::logger::tracing::error!(
-                    "Failed to notify JavaScript object `window[\"{id}\"]`. Error: {error}"
-                );
-            } else {
-                dioxus::logger::tracing::trace!("Notified JavaScript object `window[\"{id}\"]`.");
-            }
-        });
-    }
-}
-
-impl Drop for JsNotifyOnceInner {
-    fn drop(&mut self) {
-        if self.notify_on_drop {
-            self.notify();
-        }
-    }
-}
-
 /// When a normal Eval drops. It does not signal to the channel that it has been dropped. Thus any `await dioxus.recv()`
 /// will be awaiting forever. Thus we only use one `await dioxus.recv()` after all the parameters have been sent to
 /// signal drop. This struct will send the value to resolve that promise on drop.
@@ -290,3 +223,70 @@ impl Drop for EvalDrop {
         }
     }
 }
+
+// pub struct JsNotifyOnce(Arc<JsNotifyOnceInner>);
+
+// impl JsNotifyOnce {
+//     pub fn new(notify_on_drop: bool) -> Self {
+//         static NOTIFY_ID_COUNTER: std::sync::atomic::AtomicU64 =
+//             std::sync::atomic::AtomicU64::new(0);
+//         let id = format!(
+//             "__js-notify-{}",
+//             NOTIFY_ID_COUNTER.fetch_add(1, std::sync::atomic::Ordering::Relaxed)
+//         );
+//         dioxus::document::eval(&format!(
+//             "let r;let p=new Promise((res)=>{{r=res;}});window[\"{id}-p\"]=p;window[\"{id}-r\"]=r;"
+//         ));
+//         Self(Arc::new(JsNotifyOnceInner {
+//             id,
+//             notify_on_drop,
+//             is_notified: AtomicBool::new(false),
+//         }))
+//     }
+
+//     pub fn notify(&self) {
+//         self.0.notify();
+//     }
+
+//     fn id(&self) -> &str {
+//         &self.0.id
+//     }
+// }
+
+// struct JsNotifyOnceInner {
+//     id: String,
+//     notify_on_drop: bool,
+//     is_notified: AtomicBool,
+// }
+
+// impl JsNotifyOnceInner {
+//     fn notify(&self) {
+//         if self
+//             .is_notified
+//             .swap(true, std::sync::atomic::Ordering::AcqRel)
+//         {
+//             return;
+//         }
+//         let id = self.id.clone();
+//         dioxus::core::spawn_forever(async move {
+//             let eval = dioxus::document::eval(&format!(
+//                 "delete window[\"{id}-p\"];let r=window[\"{id}-r\"];if(r==undefined){{return null;}}r.resolve();delete window[\"{id}-r\"];return null;"
+//             ));
+//             if let Err(error) = eval.await {
+//                 dioxus::logger::tracing::error!(
+//                     "Failed to notify JavaScript object `window[\"{id}\"]`. Error: {error}"
+//                 );
+//             } else {
+//                 dioxus::logger::tracing::trace!("Notified JavaScript object `window[\"{id}\"]`.");
+//             }
+//         });
+//     }
+// }
+
+// impl Drop for JsNotifyOnceInner {
+//     fn drop(&mut self) {
+//         if self.notify_on_drop {
+//             self.notify();
+//         }
+//     }
+// }
