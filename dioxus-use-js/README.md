@@ -119,8 +119,9 @@ use_js!("source.ts", "bundle.js"::*);
 | --------------------- | ---------------- | ----------------- |
 | `Json`    | `&serde_json::Value` | `serde_json::Value` |
 | `JsValue<T>`, `JsValue`              | `&JsValue`       | `JsValue`         |
-| `RustCallback<T,TT>`     | `impl AsyncFnMut(T) -> Result<TT, Box<dyn Error + Send + Sync>>` | `-`|
-| `RustCallback<void,TT>`     | `impl AsyncFnMut() -> Result<TT, Box<dyn Error + Send + Sync>>` | `-`|
+| `RustCallback<T,TT>`     | `dioxus::core::Callback<T, impl Future<Output = Result<TT, serde_json::Value>> + 'static>` | `-`|
+| `Drop`     | `-` | `-`|
+
 
 ---
 ## Special Types
@@ -223,15 +224,11 @@ let js_value_example: Resource<Result<f64, JsError>> = use_resource(|| async mov
 
 ### `RustCallback`: Passing Closures from Rust to JavaScript
 
-This special TypeScript type signals to the macro that a **Rust async closure** will be passed into the JavaScript function. The macro generates the glue code required. This enables advanced interop patterns, such as calling Rust logic from within JS — all while preserving type safety. This type cannot be nested.
+This special TypeScript type signals to the macro that a **Rust async callback** will be passed into the JavaScript function. The macro generates the glue code required. This enables advanced interop patterns, such as calling Rust logic from within JS — all while preserving type safety. This type cannot be nested.
 
 ```ts
 type RustCallback<A, R> = (arg: A) => Promise<R>;
 ```
-
-If input `A` is `void` then the Rust closure will take no input.
-If output `R` is `void` then the Rust closure will return no output.
-
 `A` and `R` can only be:
 - `string` 
 - `number`
@@ -243,6 +240,19 @@ If output `R` is `void` then the Rust closure will return no output.
 - `void`
 - `Json`
 
+Multiple invocations of a `RustCallback` can be inflight at the same time e.g.
+```js
+let results = await Promise.all([callback(1), callback(2)]);
+```
+Depending on the side rust logic (e.g. different network requests), some invocations may finish before others. They do not debounce, wait for finish, or cancel previous requests. If this is desired, one would have to implement this logic themselves. Therefore it may be best to wait for the previous response to finish e.g.
+```js
+let result1 = await callback(1);
+let result2 = await callback(2);
+```
+The lifecycle of a `RustCallback` is tied to the lifecycle of the component the function was called in. I.e when the component drops all ongoing requests will be canceled on the rust side and awaiting promises on the js side will throw notifying that the component has been dropped. Any additional calls to the callback on the js side will also throw.
+
+On the rust side, if the callback returns and `Err` then the js `Promise` will be rejected with that serialized value.
+
 #### Example Usage
 
 **TypeScript:**
@@ -252,11 +262,10 @@ type RustCallback<A, R> = (arg: A) => Promise<R>;
 
 export async function useCallback(
   startingValue: number,
-  callback: RustCallback<number, number>
+  doubleIt: RustCallback<number, number>
 ): Promise<number> {
-  let doubledValue = startingValue * 2;
-  let quadValue = await callback(doubledValue); // Calls back into Rust
-  return quadValue * 2;
+  let doubledValue = await doubleIt(startingValue); // Calls back into Rust
+  return doubledValue;
 }
 ```
 
@@ -265,19 +274,49 @@ export async function useCallback(
 ```rust,ignore
 pub async fn useCallback(
     startingValue: f64,
-    mut callback: impl AsyncFnMut(f64) -> Result<f64, Box<dyn Error + Send + Sync>>,
+    doubleIt: dioxus::core::Callback<f64, impl Future<Output = Result<f64, serde_json::Value>> + 'static>,
 ) -> Result<f64, JsError>;
 ```
 
 **Usage:**
 
 ```rust,ignore
+// Rust async closure that will be called by JS
+let cb = use_callback(move |value: f64| async move {
+    Ok(value * 2.0)
+});
 let callback_example: Resource<Result<f64, JsError>> = use_resource(|| async move {
-    // Rust async closure that will be called by JS
-    let callback = async |value: f64| Ok(value * 2.0);
-
     // Pass it into the JS function
     let value = useCallback(2.0, callback).await?;
     Ok(value)
 });
+```
+
+### `Drop`: Hook Into The Component Drop LifeCycle
+
+`Drop` is used to hook into the component drop lifecycle on the js side.
+```ts
+type Drop = () => Promise<void>;
+```
+When the promise completes, the component the function was invoked from has been dropped. As such, all `RustCallback` parameters will now throw if exectuted. Therefore, `Drop` can be used to remove any handlers e.g. `drop.then(() => document.removeEventListener('click', handler))`.
+
+`Drop` is different from all the other special types in that it does not rely on any external context provided by user of the function containing it. Therefore, have a drop on a function will not generated any rust code for it.
+
+`Drop` is also available in plain js. Any function parameter named `drop` without a type will be treated as `Drop`.
+
+#### Example Usage
+
+**TypeScript:**
+```ts
+export async function dropExample(
+  value: number,
+  drop: Drop
+): Promise<number>;
+```
+**Generated Rust signature**:
+
+```rust,ignore
+pub async fn dropExample(
+    value: f64,
+) -> Result<f64, JsError>;
 ```
