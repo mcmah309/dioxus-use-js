@@ -253,7 +253,7 @@ The lifecycle of a `RustCallback` is tied to the lifecycle of the component the 
 
 Since the lifecycle of `RustCallback` is not tied to the function invocation. The function can return and all `RustCallback`'s will function until the component is dropped.
 
-On the rust side, if the callback returns and `Err` then the js `Promise` will be rejected with that serialized value.
+On the rust side, if the callback returns an `Err` then the js `Promise` will be rejected with that serialized value.
 
 #### Example Usage
 
@@ -298,11 +298,11 @@ let callback_example: Resource<Result<f64, JsError>> = use_resource(|| async mov
 
 `Drop` is used to hook into the component drop lifecycle on the js side.
 ```ts
-type Drop = () => Promise<void>;
+type Drop = Promise<void>;
 ```
 When the promise completes, the component the function was invoked from has been dropped. As such, all `RustCallback` parameters will now throw if invoked. Therefore, `Drop` can be used to remove any handlers (e.g. `drop.then(() => document.removeEventListener('click', handler))`) or abort early from a function invocation.
 
-`Drop` is different from all the other special types in that it does not rely on any external context provided by user of the function containing it. Therefore, have a drop on a function will not generated any rust code for it.
+`Drop` is different from all the other special types in that it does not rely on any external context provided by user of the function containing it. Therefore, no user facing rust code will be generated for it.
 
 `Drop` is also available in plain js. Any function parameter named `drop` without a type will be treated as `Drop`.
 
