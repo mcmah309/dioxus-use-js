@@ -1264,6 +1264,28 @@ pub fn use_js(input: TokenStream) -> TokenStream {
     } else {
         js_functions_to_generate
     };
+    for function in functions_to_generate.iter() {
+        for param in function.params.iter() {
+            if param.name.starts_with("_") && param.name.ends_with("_") {
+                panic!(
+                    "Parameter name '{}' in function '{}' is invalid. Parameters starting and ending with underscores are reserved.",
+                    param.name, function.name
+                );
+            }
+            if param.name == "dioxus" {
+                panic!(
+                    "Parameter name 'dioxus' in function '{}' is invalid. This parameter name is reserved.",
+                    function.name
+                );
+            }
+            if param.name == function.name {
+                panic!(
+                    "Parameter name '{}' in function '{}' is invalid. Parameters cannot have the same name as the function.",
+                    param.name, function.name
+                );
+            }
+        }
+    }
 
     let function_wrappers: Vec<TokenStream2> = functions_to_generate
         .iter()
