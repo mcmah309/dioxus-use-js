@@ -1,5 +1,6 @@
 #![doc = include_str!("../README.md")]
 
+use base64::Engine;
 use core::panic;
 use indexmap::IndexMap;
 use proc_macro::TokenStream;
@@ -836,7 +837,11 @@ fn get_functions_to_generate(
     }
 }
 
-fn generate_function_wrapper(func: &FunctionInfo, asset_path: &LitStr) -> TokenStream2 {
+fn generate_function_wrapper(
+    func: &FunctionInfo,
+    asset_path: &LitStr,
+    function_id_hasher: &blake3::Hasher,
+) -> TokenStream2 {
     // If we have callbacks, we cant do a simpl return, we have to do message passing
     let mut callback_name_to_index: HashMap<String, u64> = HashMap::new();
     let mut callback_name_to_info: IndexMap<String, &RustCallback> = IndexMap::new();
@@ -1268,12 +1273,23 @@ fn generate_function_wrapper(func: &FunctionInfo, asset_path: &LitStr) -> TokenS
              return Err(dioxus_use_js::JsError::Threw { func: #js_func_name_ident });
         }
     };
-    let macro_invocation_id = uuid::Uuid::now_v7().to_string();
+
+    let function_id = {
+        let mut hasher = function_id_hasher.clone();
+        hasher.update(js_func_name.as_bytes());
+        let mut output_reader = hasher.finalize_xof();
+        let mut truncated_bytes = vec![0u8; 10];
+        use std::io::Read;
+        output_reader.read_exact(&mut truncated_bytes).unwrap();
+        let function_id =
+            base64::engine::general_purpose::STANDARD_NO_PAD.encode(truncated_bytes);
+        function_id
+    };
     let js_string = if has_callbacks {
         quote! {
             static INVOCATION_NUM: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
-            // Each invocation id garuntees a unique namespace for the callback invocation where new requested/responded and everything clean/promises rejected on drop.
-            let invocation_id = format!("{}{}", #macro_invocation_id, INVOCATION_NUM.fetch_add(1, std::sync::atomic::Ordering::Relaxed));
+            // Each invocation id guarentees a unique namespace for the callback invocation for requests/respondes and on drop everything there can be cleaned up and outstanding promises rejected.
+            let invocation_id = format!("__{}{}", #function_id, INVOCATION_NUM.fetch_add(1, std::sync::atomic::Ordering::Relaxed));
             let js = format!(#js_format, MODULE, &invocation_id);
         }
     } else {
@@ -1401,9 +1417,22 @@ pub fn use_js(input: TokenStream) -> TokenStream {
         }
     }
 
+    let call_site_span = proc_macro::Span::call_site();
+    let file = call_site_span.file();
+    let line_number = call_site_span.line();
+    let column_number = call_site_span.column();
+    let mut unhashed_id = file;
+    unhashed_id.push_str(":");
+    unhashed_id.push_str(&line_number.to_string());
+    unhashed_id.push_str(":");
+    unhashed_id.push_str(&column_number.to_string());
+    unhashed_id.push_str(":");
+    let mut function_id_hasher = blake3::Hasher::new();
+    function_id_hasher.update(unhashed_id.as_bytes());
+
     let function_wrappers: Vec<TokenStream2> = functions_to_generate
         .iter()
-        .map(|func| generate_function_wrapper(func, &js_bundle_path))
+        .map(|func| generate_function_wrapper(func, &js_bundle_path, &function_id_hasher))
         .collect();
 
     let expanded = quote! {
