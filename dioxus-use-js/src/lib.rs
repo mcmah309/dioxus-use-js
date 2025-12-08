@@ -28,7 +28,8 @@ pub use serde_json::Value as SerdeJsonValue;
 #[doc(hidden)]
 pub use serde_json::from_value as serde_json_from_value;
 #[doc(hidden)]
-pub const __CALLBACK_SEND_VALIDATION_MSG: &str = "Callbacks should always send back a value that is an array of three.";
+pub const __CALLBACK_SEND_VALIDATION_MSG: &str =
+    "Callbacks should always send back a value that is an array of three.";
 #[doc(hidden)]
 pub const __INDEX_VALIDATION_MSG: &str = "The first sent back value should always be a u64.";
 #[doc(hidden)]
@@ -212,14 +213,8 @@ impl DerefMut for EvalDrop {
 
 impl Drop for EvalDrop {
     fn drop(&mut self) {
-        dioxus::logger::tracing::error!(
-                "Going Dropped",
-            );
         if let Err(e) = self.0.send(serde_json::Value::Null) {
-            dioxus::logger::tracing::error!(
-                "Going Failed to notify dropped EvalDrop instance: {}",
-                e
-            );
+            dioxus::logger::tracing::error!("Failed to notify about Eval drop: {}", e);
         }
     }
 }
