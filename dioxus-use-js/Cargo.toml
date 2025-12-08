@@ -1,6 +1,6 @@
 [package]
 name = "dioxus-use-js"
-version = "0.4.0"
+version = "0.4.1"
 authors = ["Dillon Henry McMahon"]
 edition = "2024"
 description = "A macro that generates Rust bindings to JavaScript or TypeScript functions, with compile time checks. For use with Dioxus."
@@ -9,7 +9,7 @@ repository = "https://github.com/mcmah309/dioxus-use-js"
 
 
 [dependencies]
-dioxus-use-js-macro = { version = "=0.4.0", path = "../dioxus-use-js-macro" }
+dioxus-use-js-macro = { version = "=0.4.1", path = "../dioxus-use-js-macro" }
 dioxus = { version = "0.7.0", default-features = false, features = [
     "lib",
     "logger",
