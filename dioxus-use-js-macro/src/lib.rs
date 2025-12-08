@@ -841,11 +841,15 @@ fn generate_function_wrapper(func: &FunctionInfo, asset_path: &LitStr) -> TokenS
     let mut callback_name_to_index: HashMap<String, u64> = HashMap::new();
     let mut callback_name_to_info: IndexMap<String, &RustCallback> = IndexMap::new();
     let mut index: u64 = 0;
+    let mut needs_drop = false;
     for param in &func.params {
         if let RustType::Callback(callback) = &param.rust_type {
             callback_name_to_index.insert(param.name.to_owned(), index);
             index += 1;
             callback_name_to_info.insert(param.name.to_owned(), callback);
+        }
+        if param.is_drop() {
+            needs_drop = true;
         }
     }
     let js_func_name = &func.name;
@@ -900,7 +904,7 @@ fn generate_function_wrapper(func: &FunctionInfo, asset_path: &LitStr) -> TokenS
         .params
         .iter()
         .map(|param| {
-            if param.is_drop() {
+            if needs_drop && param.is_drop() {
                 return format!("let {}=_dp_;", param.name);
             }
             match &param.rust_type {
@@ -982,16 +986,29 @@ fn generate_function_wrapper(func: &FunctionInfo, asset_path: &LitStr) -> TokenS
             )
         }
     };
-    let drop_declare = "let _d_;let _dp_=new Promise((r)=>_d_=r);";
-    let drop_handle = if has_callbacks {
-        "(async()=>{await dioxus.recv();dioxus.close();_d_();_a_=false;let w=window[_i_];delete window[_i_];for(const[o, e] of Object.values(w)){e(new Error(\"Channel destroyed\"));}})();"
+    let drop_declare = if needs_drop {
+        "let _d_;let _dp_=new Promise((r)=>_d_=r);"
     } else {
-        "(async()=>{await dioxus.recv();dioxus.close();_d_();})();"
+        ""
+    };
+    let drop_handle = if needs_drop {
+        if has_callbacks {
+            "(async()=>{await dioxus.recv();dioxus.close();_d_();_a_=false;let w=window[_i_];delete window[_i_];for(const[o, e] of Object.values(w)){e(new Error(\"Channel destroyed\"));}})();"
+        } else {
+            "(async()=>{await dioxus.recv();dioxus.close();_d_();})();"
+        }
+    } else {
+        ""
+    };
+    let finally = if needs_drop {
+        ""
+    } else {
+        "finally{dioxus.close();}"
     };
     let asset_path_string = asset_path.value();
     // Note: eval will fail if returning undefined. undefined happens if there is no return type
     let js = format!(
-        "const{{{js_func_name}}}=await import(\"{asset_path_string}\");{prepare_callbacks}{drop_declare}{param_declarations}{drop_handle}try{{{call_function}}}catch(e){{console.warn(\"Executing `{js_func_name}` threw:\", e);return [false,null];}}"
+        "const{{{js_func_name}}}=await import(\"{asset_path_string}\");{prepare_callbacks}{drop_declare}{param_declarations}{drop_handle}try{{{call_function}}}catch(e){{console.warn(\"Executing `{js_func_name}` threw:\", e);return [false,null];}}{finally}"
     );
     fn to_raw_string_literal(s: &str) -> Literal {
         let mut hashes = String::from("#");
