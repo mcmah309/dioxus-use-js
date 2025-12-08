@@ -249,7 +249,9 @@ Depending on the side rust logic (e.g. different network requests), some invocat
 let result1 = await callback(1);
 let result2 = await callback(2);
 ```
-The lifecycle of a `RustCallback` is tied to the lifecycle of the component the function was called in. I.e when the component drops all ongoing requests will be canceled on the rust side and awaiting promises on the js side will throw notifying that the component has been dropped. Any additional calls to the callback on the js side will also throw.
+The lifecycle of a `RustCallback` is tied to the lifecycle of the component the function was called in. i.e when the component drops all ongoing requests will be canceled on the rust side and awaiting promises on the js side will throw notifying that the component has been dropped. Any additional calls to the callback on the js side will also throw.
+
+Since the lifecycle of `RustCallback` is not tied to the function invocation. The function can return and all `RustCallback`'s will function until the component is dropped.
 
 On the rust side, if the callback returns and `Err` then the js `Promise` will be rejected with that serialized value.
 
@@ -298,7 +300,7 @@ let callback_example: Resource<Result<f64, JsError>> = use_resource(|| async mov
 ```ts
 type Drop = () => Promise<void>;
 ```
-When the promise completes, the component the function was invoked from has been dropped. As such, all `RustCallback` parameters will now throw if exectuted. Therefore, `Drop` can be used to remove any handlers e.g. `drop.then(() => document.removeEventListener('click', handler))`.
+When the promise completes, the component the function was invoked from has been dropped. As such, all `RustCallback` parameters will now throw if invoked. Therefore, `Drop` can be used to remove any handlers (e.g. `drop.then(() => document.removeEventListener('click', handler))`) or abort early from a function invocation.
 
 `Drop` is different from all the other special types in that it does not rely on any external context provided by user of the function containing it. Therefore, have a drop on a function will not generated any rust code for it.
 
