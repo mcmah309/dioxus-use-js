@@ -209,8 +209,8 @@ impl ToString for RustCallback {
         let input = self.input.as_deref();
         let output = self.output.as_deref().unwrap_or(UNIT);
         format!(
-            "impl AsyncFnMut({}) -> Result<{}, Box<dyn std::error::Error + Send + Sync>>",
-            input.unwrap_or_default(),
+            "dioxus::core::Callback<{},impl Future<Output = Result<{}, dioxus_use_js::SerdeJsonValue>> + 'static>",
+            input.unwrap_or("()"),
             output
         )
     }
@@ -346,7 +346,6 @@ fn ts_type_to_rust_type(ts_type: Option<&str>, is_input: bool) -> RustType {
             }
             rs_input
         };
-        // `RustCallback<T>` or `RustCallback<T,TT>`
         let ts_output = parts[1];
         let rs_output = if ts_output == "void" {
             None
@@ -830,7 +829,7 @@ fn generate_function_wrapper(func: &FunctionInfo, asset_path: &LitStr) -> TokenS
     // If we have callbacks, we cant do a simpl return, we have to do message passing
     let mut callback_name_to_index: HashMap<String, u64> = HashMap::new();
     let mut callback_name_to_info: IndexMap<String, &RustCallback> = IndexMap::new();
-    let mut index: u64 = 2; // 0 is the return value, 1 is an error.
+    let mut index: u64 = 0;
     for param in &func.params {
         if let RustType::Callback(callback) = &param.rust_type {
             callback_name_to_index.insert(param.name.to_owned(), index);
@@ -841,6 +840,7 @@ fn generate_function_wrapper(func: &FunctionInfo, asset_path: &LitStr) -> TokenS
     let js_func_name = &func.name;
     let js_func_name_ident = quote! { FUNC_NAME };
 
+    let mut has_callbacks = false;
     let send_calls: Vec<TokenStream2> = func
         .params
         .iter()
@@ -863,7 +863,10 @@ fn generate_function_wrapper(func: &FunctionInfo, asset_path: &LitStr) -> TokenS
                         })
                     }
                 },
-                RustType::Callback(_) => None,
+                RustType::Callback(_) => {
+                    has_callbacks = true;
+                    None
+                },
             }
         })
         .collect();
@@ -874,6 +877,11 @@ fn generate_function_wrapper(func: &FunctionInfo, asset_path: &LitStr) -> TokenS
         .map(|p| p.name.as_str())
         .collect::<Vec<&str>>()
         .join(", ");
+    let prepare_callbacks = if has_callbacks {
+        "let _i_=\"**INVOCATION_ID**\";let _l_={};window[_i_]=_l_;let _g_ = 0;let _a_=true;const _c_=(c, v)=>{if(!_a_){return Promise.reject(new Error(\"Channel already destroyed\"));}_g_+=1;if(_g_>Number.MAX_SAFE_INTEGER){_g_= 0;}let o, e;let p=new Promise((rs, rj)=>{o=rs;e=rj});_l_[_g_]=[o, e];dioxus.send([c,_g_,v]);return p;};"
+    } else {
+        ""
+    };
     let param_declarations = func
         .params
         .iter()
@@ -902,13 +910,13 @@ fn generate_function_wrapper(func: &FunctionInfo, asset_path: &LitStr) -> TokenS
                     (None, None) => {
                         // no return, but still need to await ack
                         format!(
-                            "const {}=async()=>{{dioxus.send([{},null]);await dioxus.recv();}};",
+                            "const {}=async()=>{{await _c_({},null);}};",
                             name, index
                         )
                     },
                     (None, Some(_)) => {
                         format!(
-                            "const {}=async()=>{{dioxus.send([{},null]);return await dioxus.recv();}};",
+                            "const {}=async()=>{{return await _c_({},null);}};",
                             name, index
 
                         )
@@ -916,13 +924,13 @@ fn generate_function_wrapper(func: &FunctionInfo, asset_path: &LitStr) -> TokenS
                     (Some(_), None) => {
                         // no return, but still need to await ack
                         format!(
-                            "const {}=async(v)=>{{dioxus.send([{},v]);await dioxus.recv();}};",
+                            "const {}=async(v)=>{{await _c_({},v);}};",
                             name, index
                         )
                     },
                     (Some(_), Some(_)) => {
                         format!(
-                            "const {}=async(v)=>{{dioxus.send([{},v]);return await dioxus.recv();}};",
+                            "const {}=async(v)=>{{return await _c_({},v);}};",
                             name, index
                         )
                     },
@@ -937,7 +945,7 @@ fn generate_function_wrapper(func: &FunctionInfo, asset_path: &LitStr) -> TokenS
     }
     let call_function = match &func.rust_return_type {
         RustType::Regular(_) => {
-            format!("_r_={maybe_await} {js_func_name}({params_list});")
+            format!("return [true, {maybe_await} {js_func_name}({params_list})];")
         }
         RustType::Callback(_) => {
             unreachable!("This cannot be an output type, the macro should have panicked earlier.")
@@ -945,21 +953,27 @@ fn generate_function_wrapper(func: &FunctionInfo, asset_path: &LitStr) -> TokenS
         RustType::JsValue(js_value) => {
             let check = if js_value.is_option {
                 // null or undefined is valid, since this is e.g. `Option<JsValue>`
-                "if (_v_===null||_v_===undefined){dioxus.send([0,null]);return null;}".to_owned()
+                "if (_v_===null||_v_===undefined){return [true,null];}".to_owned()
             } else {
                 format!(
-                    "if (_v_===null||_v_===undefined){{console.error(\"The result of `{js_func_name}` was null or undefined, but a value is needed for JsValue\");dioxus.send([0,null]);return null;}}"
+                    "if (_v_===null||_v_===undefined){{console.error(\"The result of `{js_func_name}` was null or undefined, but a value is needed for JsValue\");return [true,null];}}"
                 )
             };
             format!(
-                "const _v_={maybe_await} {js_func_name}({params_list});{check}_r_=\"__js-value-{js_func_name}-\"+crypto.randomUUID();window[_r_]=_v_;"
+                "const _v_={maybe_await} {js_func_name}({params_list});{check}let _j_=\"__js-value-\"+crypto.randomUUID();window[_j_]=_v_;return [true,_j_];"
             )
         }
+    };
+    let drop_handle= if has_callbacks {
+        "let _d_;let drop=new Promise((r)=>_d_=r);(async()=>{await dioxus.rev();dioxus.close();_d_();_a_=false;let w=window[_i_];delete window[_i_];for(const[o, e] of Object.values(w)){e(new Error(\"Channel destroyed\"));}})();"
+    }
+    else {
+        "let _d_;let drop=new Promise((r)=>_d_=r);(async()=>{await dioxus.rev();dioxus.close();_d_();})();"
     };
     let asset_path_string = asset_path.value();
     // Note: eval will fail if returning undefined. undefined happens if there is no return type
     let js = format!(
-        "const{{{js_func_name}}}=await import(\"{asset_path_string}\");{param_declarations}let _r_;try{{{call_function}}}catch(e){{console.warn(\"Executing `{js_func_name}` threw:\", e);dioxus.send([1,null]);}}dioxus.send([0,_r_]);return null;"
+        "const{{{js_func_name}}}=await import(\"{asset_path_string}\");{prepare_callbacks}{param_declarations}{drop_handle}try{{{call_function}}}catch(e){{console.warn(\"Executing `{js_func_name}` threw:\", e);return [false,null];}}"
     );
     fn to_raw_string_literal(s: &str) -> Literal {
         let mut hashes = String::from("#");
@@ -971,6 +985,7 @@ fn generate_function_wrapper(func: &FunctionInfo, asset_path: &LitStr) -> TokenS
         Literal::from_str(&raw).unwrap()
     }
     let comment = to_raw_string_literal(&js);
+    // Easier debugging to see what the generated js is. Will be compiled away.
     let js_in_comment = quote! {
         #[doc = #comment]
         fn ___above_is_the_generated_js___() {}
@@ -979,6 +994,11 @@ fn generate_function_wrapper(func: &FunctionInfo, asset_path: &LitStr) -> TokenS
         .replace("{", "{{")
         .replace("}", "}}")
         .replace(&asset_path_string, "{}");
+    let js_format = if has_callbacks {
+        js_format.replace("**INVOCATION_ID**", "{}")
+    } else {
+        js_format
+    };
 
     // Generate parameter types with extracted type information
     let param_types: Vec<_> = func
@@ -1060,58 +1080,39 @@ fn generate_function_wrapper(func: &FunctionInfo, asset_path: &LitStr) -> TokenS
         .map(|(name, index)| {
             let callback_name = format_ident!("{}", name);
             let callback_info = callback_name_to_info.get(name).unwrap();
+            // todo each call should spawn so multiple can be inflight at the same time
             let callback_call = if let Some(_) = callback_info.input {
                 quote! {
-                    let value = dioxus_use_js::serde_json_from_value(value).map_err(|e| {
-                        dioxus_use_js::JsError::Eval {
-                            func: #js_func_name_ident,
-                            error: dioxus::document::EvalError::Serialization(e),
-                        }
-                    })?;
-                    let value = match #callback_name(value).await {
+                    let value = values.next().unwrap();
+                    let value = match dioxus_use_js::serde_json_from_value(value) {
                         Ok(value) => value,
-                        Err(error) => {
-                            return Err(dioxus_use_js::JsError::Callback {
-                                func: #js_func_name_ident,
-                                callback: #name,
-                                error: error
-                            });
+                        Err(value) => {
+                            responder.respond(request_id, false, dioxus_use_js::SerdeJsonValue::String(dioxus_use_js::__UNEXPECTED_CALLBACK_TYPE.to_owned()));
+                            continue;
                         }
                     };
+                    let result = #callback_name(value).await;
                 }
             } else {
                 quote! {
-                    let value = match #callback_name().await {
-                        Ok(value) => value,
-                        Err(error) => {
-                            return Err(dioxus_use_js::JsError::Callback {
-                                func: #js_func_name_ident,
-                                callback: #name,
-                                error: error
-                            });
-                        }
-                    };
+                    let result = #callback_name(()).await;
                 }
             };
 
             let callback_send_back = if let Some(_) = callback_info.output {
                 quote! {
-                    eval.send(value).map_err(|e| {
-                        dioxus_use_js::JsError::Eval {
-                            func: #js_func_name_ident,
-                            error: e
-                        }
-                    })?;
+                    match result {
+                        Ok(value) => responder.respond(request_id, true, value),
+                        Err(error) => responder.respond(request_id, false, error),
+                    }
                 }
             } else {
-                // send ack
                 quote! {
-                    eval.send(dioxus_use_js::SerdeJsonValue::Null).map_err(|e| {
-                        dioxus_use_js::JsError::Eval {
-                            func: #js_func_name_ident,
-                            error: e,
-                        }
-                    })?;
+                    match result {
+                        // send ack
+                        Ok(_) => responder.respond(request_id, true, dioxus_use_js::SerdeJsonValue::Null),
+                        Err(error) => responder.respond(request_id, false, error),
+                    }
                 }
             };
             quote! {
@@ -1123,48 +1124,88 @@ fn generate_function_wrapper(func: &FunctionInfo, asset_path: &LitStr) -> TokenS
         })
         .collect();
 
+    let callback_spawn = if !callback_arms.is_empty() {
+        quote! {
+            dioxus::prelude::spawn({
+                let mut eval = dioxus_use_js::EvalDrop::new(eval.clone());
+                    async move {
+                        let responder = dioxus_use_js::CallbackResponder::new(&invocation_id);
+                        loop {
+                            let result = eval.recv::<dioxus_use_js::SerdeJsonValue>().await;
+                            let value = match result {
+                                Ok(v) => v,
+                                Err(e) => {
+                                    // Though we still may be able to accept more callback requests,
+                                    // We shutdown otherwise the invocation of this callback will be awaiting forever
+                                    // since we can't cancel it since we do not know the id. (Dropping the eval triggers shutdown)
+                                    dioxus::prelude::error!(
+                                        "Callback receiver errored. Shutting down all callbacks for invocation id `{}`: {:?}",
+                                        &invocation_id,
+                                        e
+                                    );
+                                    return;
+                                }
+                            };
+                            let dioxus_use_js::SerdeJsonValue::Array(values) = value else {
+                                unreachable!("{}", dioxus_use_js::__CALLBACK_SEND_VALIDATION_MSG);
+                            };
+                            let len = values.len();
+                            if len != 3 {
+                                unreachable!("{}", dioxus_use_js::__CALLBACK_SEND_VALIDATION_MSG);
+                            }
+                            let mut values = values.into_iter();
+                            let action = values.next().unwrap().as_u64().expect(dioxus_use_js::__INDEX_VALIDATION_MSG);
+                            let request_id = values.next().unwrap().as_u64().expect(dioxus_use_js::__INDEX_VALIDATION_MSG);
+                            match action {
+                                #(#callback_arms,)*
+                                _ => unreachable!("{}", dioxus_use_js::__BAD_CALL_MSG),
+                            }
+                        }
+                    }
+            });
+        }
+    } else {
+        quote! {}
+    };
+
     let end_statement = quote! {
-    loop {
-        let value = eval
-            .recv::<dioxus_use_js::SerdeJsonValue>()
-            .await
-            .map_err(|e| {
+        let value = eval.await.map_err(|e| {
+            dioxus_use_js::JsError::Eval {
+                func: #js_func_name_ident,
+                error: e,
+            }
+        })?;
+        let dioxus_use_js::SerdeJsonValue::Array(values) = value else {
+            unreachable!("{}", dioxus_use_js::__RESULT_SEND_VALIDATION_MSG);
+        };
+        if values.len() != 2 {
+            unreachable!("{}", dioxus_use_js::__RESULT_SEND_VALIDATION_MSG);
+        }
+        let mut values = values.into_iter();
+        let success = values.next().unwrap().as_bool().expect(dioxus_use_js::__INDEX_VALIDATION_MSG);
+        if success {
+            let value = values.next().unwrap();
+            return dioxus_use_js::serde_json_from_value(value).map_err(|e| {
                 dioxus_use_js::JsError::Eval {
                     func: #js_func_name_ident,
-                    error: e,
+                    error: dioxus::document::EvalError::Serialization(e),
                 }
-            })?;
-        match value{
-            dioxus_use_js::SerdeJsonValue::Array(values) => {
-                if values.len() != 2 {
-                    unreachable!("{}", dioxus_use_js::__SEND_VALIDATION_MSG)
-                }
-                let mut iter = values.into_iter();
-                let action_ = match iter.next().unwrap() {
-                    dioxus_use_js::SerdeJsonValue::Number(action_) => action_,
-                    _ => unreachable!("{}", dioxus_use_js::__INDEX_VALIDATION_MSG),
-                };
-                let value = iter.next().unwrap();
-                match action_.as_u64().expect(dioxus_use_js::__INDEX_VALIDATION_MSG) {
-                    0 => {
-                        return dioxus_use_js::serde_json_from_value(value).map_err(|e| {
-                            dioxus_use_js::JsError::Eval {
-                                func: #js_func_name_ident,
-                                error: dioxus::document::EvalError::Serialization(e),
-                            }
-                        })
-                        #void_output_mapping;
-                    }
-                    1 => {
-                        return Err(dioxus_use_js::JsError::Threw { func: #js_func_name_ident });
-                    }
-                    #(#callback_arms,)*
-                    _ => unreachable!("{}", dioxus_use_js::__BAD_CALL_MSG),
-                }
-            }
-            _ => unreachable!("{}", dioxus_use_js::__SEND_VALIDATION_MSG),
+            })
+            #void_output_mapping;
+        } else {
+             return Err(dioxus_use_js::JsError::Threw { func: #js_func_name_ident });
         }
-    }
+    };
+
+    let js_string = if has_callbacks {
+        quote! {
+            static INVOCATION_ID: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+            // todo change to include call location
+            let invocation_id = format!("{}{}", #js_func_name, INVOCATION_ID.fetch_add(1, std::sync::atomic::Ordering::SeqCst));
+            let js = format!(#js_format, MODULE, &invocation_id);
+        }
+    } else {
+        quote! {let js = format!(#js_format, MODULE);}
     };
 
     quote! {
@@ -1174,9 +1215,10 @@ fn generate_function_wrapper(func: &FunctionInfo, asset_path: &LitStr) -> TokenS
             const MODULE: Asset = asset!(#asset_path);
             const #js_func_name_ident: &str = #js_func_name;
             #js_in_comment
-            let js = format!(#js_format, MODULE);
+            #js_string
             let mut eval = dioxus::document::eval(js.as_str());
             #(#send_calls)*
+            #callback_spawn
             #end_statement
         }
     }
@@ -1577,19 +1619,19 @@ mod tests {
     fn test_rust_callback() {
         assert_eq!(
             ts_type_to_rust_type(Some("RustCallback<number,string>"), true).to_string(),
-            "impl AsyncFnMut(f64) -> Result<String, Box<dyn std::error::Error + Send + Sync>>"
+            "dioxus::core::Callback<f64, impl Future<Output = Result<String, dioxus_use_js::SerdeJsonValue>> + 'static>"
         );
         assert_eq!(
             ts_type_to_rust_type(Some("RustCallback<void,string>"), true).to_string(),
-            "impl AsyncFnMut() -> Result<String, Box<dyn std::error::Error + Send + Sync>>"
+            "dioxus::core::Callback<(), impl Future<Output = Result<String, dioxus_use_js::SerdeJsonValue>> + 'static>"
         );
         assert_eq!(
             ts_type_to_rust_type(Some("RustCallback<void,void>"), true).to_string(),
-            "impl AsyncFnMut() -> Result<(), Box<dyn std::error::Error + Send + Sync>>"
+            "dioxus::core::Callback<(), impl Future<Output = Result<(), dioxus_use_js::SerdeJsonValue>> + 'static>"
         );
         assert_eq!(
             ts_type_to_rust_type(Some("RustCallback<number,void>"), true).to_string(),
-            "impl AsyncFnMut(f64) -> Result<(), Box<dyn std::error::Error + Send + Sync>>"
+            "dioxus::core::Callback<f64, impl Future<Output = Result<(), dioxus_use_js::SerdeJsonValue>> + 'static>"
         );
     }
 

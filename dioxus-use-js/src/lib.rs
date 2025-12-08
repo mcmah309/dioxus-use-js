@@ -10,7 +10,7 @@ mod build;
 #[cfg(feature = "build")]
 pub use build::*;
 
-use dioxus::document;
+use dioxus::document::{self, Eval};
 pub use dioxus_use_js_macro::use_js;
 
 // We export these so downstreams don't need `serde` or `serde_json` directly
@@ -31,12 +31,17 @@ pub use serde_json::from_value as serde_json_from_value;
 pub const __CALLBACK_SEND_VALIDATION_MSG: &str =
     "Callbacks should always send back a value that is an array of three.";
 #[doc(hidden)]
-pub const __INDEX_VALIDATION_MSG: &str = "The first sent back value should always be a u64.";
+pub const __RESULT_SEND_VALIDATION_MSG: &str =
+    "Result should always send back a value that is an array of two.";
+#[doc(hidden)]
+pub const __INDEX_VALIDATION_MSG: &str = "The index value was an unexpected type";
 #[doc(hidden)]
 pub const __BAD_CALL_MSG: &str = "Should only attempt to call known actions.";
 #[doc(hidden)]
 pub const __BAD_VOID_RETURN: &str =
     "A function that should return no value instead returned a value";
+#[doc(hidden)]
+pub const __UNEXPECTED_CALLBACK_TYPE: &str = "The callback was called with the wrong type";
 // We do not export this so the dioxus version doing the eval is the same, otherwise it may compile but using two different versions of dioxus at runtime will likely cause a runtime error
 // be two different versions of dioxus in the graph
 // pub use dioxus::document::eval as dioxus_document_eval;
@@ -216,6 +221,68 @@ impl Drop for EvalDrop {
         if let Err(e) = self.0.send(serde_json::Value::Null) {
             dioxus::logger::tracing::error!("Failed to notify about Eval drop: {}", e);
         }
+    }
+}
+
+#[doc(hidden)]
+pub struct CallbackResponder(Eval);
+
+impl CallbackResponder {
+    pub fn new(invocation_id: &str) -> Self {
+        // r = [id, ok, data], i = id, o = ok, d = data, f = window[function_id], x = f[id] = [resolve, reject]
+        CallbackResponder(dioxus::document::eval(&format!(
+            "while(true){{let r=await dioxus.recv();if(!Array.isArray(r))break;let f=window[\"{invocation_id}\"];if(f==null)break;let i=r[0],o=r[1],d=r[2],x=f[i];delete f[i];if(o)x[0](d);else x[1](d);}}",
+        )))
+    }
+
+    pub fn respond<T: serde::Serialize>(&self, request_id: u64, is_ok: bool, data: T) {
+        let payload = (request_id, is_ok, data);
+
+        let result = self.0.send(payload);
+        if let Err(e) = result {
+            dioxus::logger::tracing::error!(
+                "Failed to send callback response for invocation '{}' request '{}': {}",
+                request_id,
+                is_ok,
+                e
+            );
+        }
+    }
+}
+
+impl Drop for CallbackResponder {
+    fn drop(&mut self) {
+        // Send a non-array value to break the loop
+        let result = self.0.send(serde_json::Value::Null);
+        if let Err(e) = result {
+            dioxus::logger::tracing::error!("Failed to shut down callback responder: {}", e);
+        }
+    }
+}
+
+pub fn __callback_respond<T: SerdeSerialize>(
+    function_id: &str,
+    request_id: u64,
+    is_ok: bool,
+    data: T,
+) {
+    // To decrease binary size since parent is generic so it will be monomorphized
+    #[inline(never)]
+    fn _helper(function_id: &str, request_id: u64, is_ok: bool) -> Eval {
+        // The first index holds the function pointer to `resolve` and the second to reject `reject`
+        let index = if is_ok { "0" } else { "1" };
+        dioxus::document::eval(&format!(
+            "let v=await dioxus.recv();let f=window[\"{function_id}\"];if(f==undefined){{return null;}}let r=f[\"{request_id}\"][{index}];if(r==undefined){{return null;}}delete f[\"{request_id}\"];r(v);return null;"
+        ))
+    }
+    let eval = _helper(function_id, request_id, is_ok);
+    if let Err(e) = eval.send(data) {
+        dioxus::logger::tracing::error!(
+            "Failed to send callback response for function '{}' request '{}': {}",
+            function_id,
+            request_id,
+            e
+        );
     }
 }
 
