@@ -1,7 +1,7 @@
 use dioxus::prelude::*;
 use dioxus_use_js::use_js;
 
-use_js!("js-utils/src/example.ts", "assets/example.js"::{sleep, drop_example});
+use_js!("js-utils/src/example.ts", "assets/example.js"::{sleep, callbackAndDrop, dropOnly});
 
 #[component]
 pub(crate) fn Dropping() -> Element {
@@ -12,7 +12,7 @@ pub(crate) fn Dropping() -> Element {
     });
     if *switch.read() {
         rsx!(
-            ToDrop {}
+            CallbackAndDrop {}
         )
     } else {
         rsx!(
@@ -22,7 +22,7 @@ pub(crate) fn Dropping() -> Element {
 }
 
 #[component]
-fn ToDrop() -> Element {
+fn CallbackAndDrop() -> Element {
     let cb = use_callback(move |point: Vec<f64>| async move {
         let x = point[0];
         let y = point[1];
@@ -33,11 +33,13 @@ fn ToDrop() -> Element {
         Ok(())
     });
     let value = use_resource(move || async move {
-        drop_example(cb).await.unwrap()
+        let mut val = callbackAndDrop(cb).await.unwrap();
+        val += dropOnly().await.unwrap();
+        val
     });
     let value = value.value().read().unwrap_or(0.0);
     rsx!(
         div { "5 seconds until drop. Click around and see logs for messages" }
-        div { "Value should be 44: `{value}`" }
+        div { "Value should be 55: `{value}`" }
     )
 }

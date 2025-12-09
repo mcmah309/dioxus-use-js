@@ -2,6 +2,8 @@
 #![doc = include_str!("../README.md")]
 
 use std::ops::{Deref, DerefMut};
+use std::pin::Pin;
+use std::task::{Context, Poll};
 use std::{error::Error, fmt::Display, sync::Arc};
 
 #[cfg(feature = "build")]
@@ -208,9 +210,11 @@ struct CallbackResponderInner(Eval);
 impl CallbackResponder {
     pub fn new(invocation_id: &str) -> Self {
         // r = [id, ok, data], i = id, o = ok, d = data, f = window[function_id], x = f[id] = [resolve, reject]
-        CallbackResponder(Arc::new(CallbackResponderInner(dioxus::document::eval(&format!(
-            "while(true){{let r=await dioxus.recv();if(!Array.isArray(r))break;let f=window[\"{invocation_id}\"];if(f==null)break;let i=r[0],o=r[1],d=r[2],x=f[i];delete f[i];if(o)x[0](d);else x[1](d);}}",
-        )))))
+        CallbackResponder(Arc::new(CallbackResponderInner(dioxus::document::eval(
+            &format!(
+                "while(true){{let r=await dioxus.recv();if(!Array.isArray(r))break;let f=window[\"{invocation_id}\"];if(f==null)break;let i=r[0],o=r[1],d=r[2],x=f[i];delete f[i];if(o)x[0](d);else x[1](d);}}",
+            ),
+        ))))
     }
 
     pub fn respond<T: serde::Serialize>(&self, request_id: u64, is_ok: bool, data: T) {
@@ -235,6 +239,17 @@ impl Drop for CallbackResponderInner {
         if let Err(e) = result {
             dioxus::logger::tracing::error!("Failed to shut down callback responder: {}", e);
         }
+    }
+}
+
+#[doc(hidden)]
+pub struct PendingFuture;
+
+impl Future for PendingFuture {
+    type Output = ();
+
+    fn poll(self: Pin<&mut Self>, _: &mut Context<'_>) -> Poll<Self::Output> {
+        Poll::Pending
     }
 }
 

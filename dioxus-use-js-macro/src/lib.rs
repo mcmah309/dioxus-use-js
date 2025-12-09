@@ -846,21 +846,22 @@ fn generate_function_wrapper(
     let mut callback_name_to_index: HashMap<String, u64> = HashMap::new();
     let mut callback_name_to_info: IndexMap<String, &RustCallback> = IndexMap::new();
     let mut index: u64 = 0;
-    let mut needs_drop = false;
+    let mut has_drop = false;
+    let mut has_callbacks = false;
     for param in &func.params {
         if let RustType::Callback(callback) = &param.rust_type {
             callback_name_to_index.insert(param.name.to_owned(), index);
             index += 1;
             callback_name_to_info.insert(param.name.to_owned(), callback);
+            has_callbacks = true;
         }
         if param.is_drop() {
-            needs_drop = true;
+            has_drop = true;
         }
     }
     let js_func_name = &func.name;
     let js_func_name_ident = quote! { FUNC_NAME };
 
-    let mut has_callbacks = false;
     let send_calls: Vec<TokenStream2> = func
         .params
         .iter()
@@ -887,7 +888,6 @@ fn generate_function_wrapper(
                     }
                 },
                 RustType::Callback(_) => {
-                    has_callbacks = true;
                     None
                 },
             }
@@ -909,7 +909,7 @@ fn generate_function_wrapper(
         .params
         .iter()
         .map(|param| {
-            if needs_drop && param.is_drop() {
+            if has_drop && param.is_drop() {
                 return format!("let {}=_dp_;", param.name);
             }
             match &param.rust_type {
@@ -991,21 +991,25 @@ fn generate_function_wrapper(
             )
         }
     };
-    let drop_declare = if needs_drop {
+    let drop_declare = if has_drop {
         "let _d_;let _dp_=new Promise((r)=>_d_=r);"
     } else {
         ""
     };
-    let drop_handle = if needs_drop {
+    let drop_handle = if has_drop {
         if has_callbacks {
             "(async()=>{await dioxus.recv();dioxus.close();_d_();_a_=false;let w=window[_i_];delete window[_i_];for(const[o, e] of Object.values(w)){e(new Error(\"Channel destroyed\"));}})();"
         } else {
             "(async()=>{await dioxus.recv();dioxus.close();_d_();})();"
         }
     } else {
-        ""
+        if has_callbacks {
+            "(async()=>{await dioxus.recv();dioxus.close();_a_=false;let w=window[_i_];delete window[_i_];for(const[o, e] of Object.values(w)){e(new Error(\"Channel destroyed\"));}})();"
+        } else {
+            ""
+        }
     };
-    let finally = if needs_drop {
+    let finally = if has_drop {
         ""
     } else {
         "finally{dioxus.close();}"
@@ -1241,6 +1245,17 @@ fn generate_function_wrapper(
                     }
             });
         }
+    } else if has_drop {
+        // We can't use `use_drop` because the rule of hooks, so like the callback case, we just
+        // spawn a future that will never finish, but the eval will drop and fire off the signal
+        // when the component drops.
+        quote! {
+            dioxus::prelude::spawn(async move {
+                let mut eval = dioxus_use_js::EvalDrop::new(eval);
+                let f = dioxus_use_js::PendingFuture;
+                f.await;
+            });
+        }
     } else {
         quote! {}
     };
@@ -1281,14 +1296,13 @@ fn generate_function_wrapper(
         let mut truncated_bytes = vec![0u8; 10];
         use std::io::Read;
         output_reader.read_exact(&mut truncated_bytes).unwrap();
-        let function_id =
-            base64::engine::general_purpose::STANDARD_NO_PAD.encode(truncated_bytes);
+        let function_id = base64::engine::general_purpose::STANDARD_NO_PAD.encode(truncated_bytes);
         function_id
     };
     let js_string = if has_callbacks {
         quote! {
             static INVOCATION_NUM: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
-            // Each invocation id guarentees a unique namespace for the callback invocation for requests/respondes and on drop everything there can be cleaned up and outstanding promises rejected.
+            // Each invocation id guarentees a unique namespace for the callback invocation for requests/responses and on drop everything there can be cleaned up and outstanding promises rejected.
             let invocation_id = format!("__{}{}", #function_id, INVOCATION_NUM.fetch_add(1, std::sync::atomic::Ordering::Relaxed));
             let js = format!(#js_format, MODULE, &invocation_id);
         }

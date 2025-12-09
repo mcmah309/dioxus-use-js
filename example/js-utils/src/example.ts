@@ -106,8 +106,11 @@ export async function callback6(callback: RustCallback<void, void>): Promise<str
     throw new Error("Expected callback to throw an error");
 }
 
+//************************************************************************//
+
 type Drop = Promise<void>;
-export async function drop_example(callback: RustCallback<number[], void>, drop: Drop): Promise<number> {
+
+export async function callbackAndDrop(callback: RustCallback<number[], void>, drop: Drop): Promise<number> {
     let handler = async (e) => {
         await callback([e.pageX, e.pageY]);
     };
@@ -118,6 +121,13 @@ export async function drop_example(callback: RustCallback<number[], void>, drop:
         console.info("Removed click handler");
     });
     return 44;
+}
+
+export async function dropOnly(drop: Drop): Promise<number> {
+    drop.then(() => {
+        console.info("Dropped");
+    });
+    return 11;
 }
 
 // Functions not used in example but still generated through `*`
