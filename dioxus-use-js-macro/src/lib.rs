@@ -846,7 +846,7 @@ fn generate_function_wrapper(
     let mut callback_name_to_index: HashMap<String, u64> = HashMap::new();
     let mut callback_name_to_info: IndexMap<String, &RustCallback> = IndexMap::new();
     let mut index: u64 = 0;
-    let mut has_drop = false;
+    let mut needs_drop = false;
     let mut has_callbacks = false;
     for param in &func.params {
         if let RustType::Callback(callback) = &param.rust_type {
@@ -854,9 +854,9 @@ fn generate_function_wrapper(
             index += 1;
             callback_name_to_info.insert(param.name.to_owned(), callback);
             has_callbacks = true;
-        }
-        if param.is_drop() {
-            has_drop = true;
+            needs_drop = true;
+        } else if param.is_drop() {
+            needs_drop = true;
         }
     }
     let js_func_name = &func.name;
@@ -900,8 +900,11 @@ fn generate_function_wrapper(
         .map(|p| p.name.as_str())
         .collect::<Vec<&str>>()
         .join(", ");
-    let prepare_callbacks = if has_callbacks {
+    let prepare = if has_callbacks {
+        assert!(needs_drop);
         "let _i_=\"**INVOCATION_ID**\";let _l_={};window[_i_]=_l_;let _g_ = 0;let _a_=true;const _c_=(c, v)=>{if(!_a_){return Promise.reject(new Error(\"Channel already destroyed\"));}_g_+=1;if(_g_>Number.MAX_SAFE_INTEGER){_g_= 0;}let o, e;let p=new Promise((rs, rj)=>{o=rs;e=rj});_l_[_g_]=[o, e];dioxus.send([c,_g_,v]);return p;};"
+    } else if needs_drop {
+        "let _i_=\"**INVOCATION_ID**\";"
     } else {
         ""
     };
@@ -909,7 +912,7 @@ fn generate_function_wrapper(
         .params
         .iter()
         .map(|param| {
-            if has_drop && param.is_drop() {
+            if needs_drop && param.is_drop() {
                 return format!("let {}=_dp_;", param.name);
             }
             match &param.rust_type {
@@ -991,25 +994,26 @@ fn generate_function_wrapper(
             )
         }
     };
-    let drop_declare = if has_drop {
-        "let _d_;let _dp_=new Promise((r)=>_d_=r);"
+    let drop_declare = if needs_drop {
+        // Note the additional `d` also added by `SignalDrop`
+        "let _d_;let _dp_=new Promise((r)=>_d_=r);window[_i_+\"d\"]=_d_;"
     } else {
         ""
     };
-    let drop_handle = if has_drop {
+    let drop_handle = if needs_drop {
         if has_callbacks {
-            "(async()=>{await dioxus.recv();dioxus.close();_d_();_a_=false;let w=window[_i_];delete window[_i_];for(const[o, e] of Object.values(w)){e(new Error(\"Channel destroyed\"));}})();"
+            "(async()=>{await _dp_;dioxus.close();_a_=false;let w=window[_i_];delete window[_i_];for(const[o, e] of Object.values(w)){e(new Error(\"Channel destroyed\"));}})();"
         } else {
-            "(async()=>{await dioxus.recv();dioxus.close();_d_();})();"
+            "(async()=>{await _dp_;dioxus.close();})();"
         }
     } else {
-        if has_callbacks {
-            "(async()=>{await dioxus.recv();dioxus.close();_a_=false;let w=window[_i_];delete window[_i_];for(const[o, e] of Object.values(w)){e(new Error(\"Channel destroyed\"));}})();"
-        } else {
-            ""
-        }
+        assert!(
+            !has_callbacks,
+            "If this is true then needing drop should be true"
+        );
+        ""
     };
-    let finally = if has_drop {
+    let finally = if needs_drop {
         ""
     } else {
         "finally{dioxus.close();}"
@@ -1017,7 +1021,7 @@ fn generate_function_wrapper(
     let asset_path_string = asset_path.value();
     // Note: eval will fail if returning undefined. undefined happens if there is no return type
     let js = format!(
-        "const{{{js_func_name}}}=await import(\"{asset_path_string}\");{prepare_callbacks}{drop_declare}{param_declarations}{drop_handle}try{{{call_function}}}catch(e){{console.warn(\"Executing `{js_func_name}` threw:\", e);return [false,null];}}{finally}"
+        "const{{{js_func_name}}}=await import(\"{asset_path_string}\");{prepare}{drop_declare}{param_declarations}{drop_handle}try{{{call_function}}}catch(e){{console.warn(\"Executing `{js_func_name}` threw:\", e);return [false,null];}}{finally}"
     );
     fn to_raw_string_literal(s: &str) -> Literal {
         let mut hashes = String::from("#");
@@ -1038,7 +1042,7 @@ fn generate_function_wrapper(
         .replace("{", "{{")
         .replace("}", "}}")
         .replace(&asset_path_string, "{}");
-    let js_format = if has_callbacks {
+    let js_format = if needs_drop {
         js_format.replace("**INVOCATION_ID**", "{}")
     } else {
         js_format
@@ -1208,9 +1212,9 @@ fn generate_function_wrapper(
     let callback_spawn = if !callback_arms.is_empty() {
         quote! {
             dioxus::prelude::spawn({
-                let mut eval = dioxus_use_js::EvalDrop::new(eval);
                     async move {
                         let responder = dioxus_use_js::CallbackResponder::new(&invocation_id);
+                        let _signal_drop = dioxus_use_js::SignalDrop::new(invocation_id.clone());
                         loop {
                             let result = eval.recv::<dioxus_use_js::SerdeJsonValue>().await;
                             let value = match result {
@@ -1218,7 +1222,7 @@ fn generate_function_wrapper(
                                 Err(e) => {
                                     // Though we still may be able to accept more callback requests,
                                     // We shutdown otherwise the invocation of this callback will be awaiting forever
-                                    // since we can't cancel it since we do not know the id. (Dropping the eval triggers shutdown)
+                                    // (since we don't know where the request came from so we cannot cancel it).
                                     dioxus::prelude::error!(
                                         "Callback receiver errored. Shutting down all callbacks for invocation id `{}`: {:?}",
                                         &invocation_id,
@@ -1245,13 +1249,13 @@ fn generate_function_wrapper(
                     }
             });
         }
-    } else if has_drop {
+    } else if needs_drop {
         // We can't use `use_drop` because the rule of hooks, so like the callback case, we just
         // spawn a future that will never finish, but the eval will drop and fire off the signal
         // when the component drops.
         quote! {
             dioxus::prelude::spawn(async move {
-                let mut eval = dioxus_use_js::EvalDrop::new(eval);
+                let _signal_drop = dioxus_use_js::SignalDrop::new(invocation_id);
                 let f = dioxus_use_js::PendingFuture;
                 f.await;
             });
@@ -1299,7 +1303,7 @@ fn generate_function_wrapper(
         let function_id = base64::engine::general_purpose::STANDARD_NO_PAD.encode(truncated_bytes);
         function_id
     };
-    let js_string = if has_callbacks {
+    let js_string = if needs_drop {
         quote! {
             static INVOCATION_NUM: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
             // Each invocation id guarentees a unique namespace for the callback invocation for requests/responses and on drop everything there can be cleaned up and outstanding promises rejected.

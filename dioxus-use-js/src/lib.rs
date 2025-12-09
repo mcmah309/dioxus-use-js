@@ -148,7 +148,6 @@ impl Display for JsValue {
 impl Drop for JsValueInner {
     fn drop(&mut self) {
         let object_name = std::mem::take(&mut self.0);
-        // work around for no async drop trait
         dioxus::core::spawn_forever(async move {
             let eval =
                 dioxus::document::eval(&format!("delete window[\"{object_name}\"];return null;"));
@@ -165,38 +164,41 @@ impl Drop for JsValueInner {
     }
 }
 
-/// When a normal Eval drops. It does not signal to the channel that it has been dropped. Thus any `await dioxus.recv()`
-/// will be awaiting forever. Thus we only use one `await dioxus.recv()` after all the parameters have been sent to
-/// signal drop. This struct will send the value to resolve that promise on drop.
+/// Signals the drop of a component.
+/// 
+/// Dev Note: When a normal Eval drops. It does not signal to the channel that it has been dropped.
+/// Thus any `await dioxus.recv()` will be awaiting forever, on web we could send one last signal
+/// to notify of this (i.e. only use one `await dioxus.recv()` in a seperate async closure
+/// after all the parameters have been sent to signal drop), but on desktop the channel
+/// is closed at this point.
+/// Therefore we store the drop promise on the window and dropping this
+/// struct will send the value to resolve the promise.
 #[doc(hidden)]
-pub struct EvalDrop(document::Eval);
+pub struct SignalDrop(String);
 
-impl EvalDrop {
-    /// Create a new EvalDrop from a dioxus eval
-    pub fn new(eval: document::Eval) -> Self {
-        Self(eval)
+impl SignalDrop {
+    pub fn new(invocation_id: String) -> Self {
+        SignalDrop(invocation_id)
     }
 }
 
-impl Deref for EvalDrop {
-    type Target = document::Eval;
-
-    fn deref(&self) -> &Self::Target {
-        &self.0
-    }
-}
-
-impl DerefMut for EvalDrop {
-    fn deref_mut(&mut self) -> &mut Self::Target {
-        &mut self.0
-    }
-}
-
-impl Drop for EvalDrop {
+impl Drop for SignalDrop {
     fn drop(&mut self) {
-        if let Err(e) = self.0.send(serde_json::Value::Null) {
-            dioxus::logger::tracing::error!("Failed to notify about Eval drop: {}", e);
-        }
+        let invocation_id = std::mem::take(&mut self.0);
+        dioxus::core::spawn_forever(async move {
+            // Note the extra `d` for drop
+            let eval =
+                dioxus::document::eval(&format!("let i=\"{invocation_id}d\";let p=window[i];delete window[i];p();dioxus.close();return null;"));
+            if let Err(error) = eval.await {
+                dioxus::logger::tracing::error!(
+                    "Failed to notify of drop for invocation `window[\"{invocation_id}d\"]`. Error: {error}"
+                );
+            } else {
+                dioxus::logger::tracing::trace!(
+                    "Notified of drop for invocation `window[\"{invocation_id}d\"]`."
+                );
+            }
+        });
     }
 }
 
