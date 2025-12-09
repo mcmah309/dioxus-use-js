@@ -17,6 +17,8 @@ pub(crate) fn Dropping() -> Element {
     } else {
         rsx!(
             div { "Dropped: Clicks are no longer logged and handler is cleaned up" }
+            div { "See logs for `Removed click handler`" }
+            div { "See logs for `Dropped`" }
         )
     }
 }
@@ -29,7 +31,7 @@ fn CallbackAndDrop() -> Element {
         info!("Clicked at point ({}, {})", x, y);
         // Multiple can be inflight at the same time
         sleep(1000.0).await.unwrap();
-        info!("Finished processing point ({}, {})", x, y);
+        info!("Click at point ({}, {}) finished processing", x, y);
         Ok(())
     });
     let value = use_resource(move || async move {
