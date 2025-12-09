@@ -68,8 +68,8 @@ fn App() -> Element {
     let cb1 = use_callback(move |value: f64| async move {
         callback1_signal
             .write()
-            .replace_range(.., "Callback1 called! Sleeping for 2 second...");
-        sleep(2000.0).await.unwrap();
+            .replace_range(.., "Callback1 called! Sleeping for 3 seconds...");
+        sleep(3000.0).await.unwrap();
         callback1_signal
             .write()
             .replace_range(.., "Callback1 called!");
@@ -84,8 +84,8 @@ fn App() -> Element {
     let cb2 = use_callback(move |value: ()| async move {
         callback2_signal
             .write()
-            .replace_range(.., "Callback2 called! Sleeping for 2 second...");
-        sleep(2000.0).await.unwrap();
+            .replace_range(.., "Callback2 called! Sleeping for 3 seconds...");
+        sleep(3000.0).await.unwrap();
         callback2_signal
             .write()
             .replace_range(.., "Callback2 called!");
@@ -100,8 +100,8 @@ fn App() -> Element {
     let cb3 = use_callback(move |value: f64| async move {
         callback3_signal
             .write()
-            .replace_range(.., "Callback3 called! Sleeping for 2 second...");
-        sleep(2000.0).await.unwrap();
+            .replace_range(.., "Callback3 called! Sleeping for 3 seconds...");
+        sleep(3000.0).await.unwrap();
         callback3_signal
             .write()
             .replace_range(.., "Callback3 called!");
@@ -116,8 +116,8 @@ fn App() -> Element {
     let cb4 = use_callback(move |value: ()| async move {
         callback4_signal
             .write()
-            .replace_range(.., "Callback4 called! Sleeping for 2 second...");
-        sleep(2000.0).await.unwrap();
+            .replace_range(.., "Callback4 called! Sleeping for 3 seconds...");
+        sleep(3000.0).await.unwrap();
         callback4_signal
             .write()
             .replace_range(.., "Callback4 called!");
@@ -144,15 +144,16 @@ fn App() -> Element {
     });
 
     let cb6 = use_callback(|_: ()| async {
-            return Err(serde_json::Value::Number(serde_json::Number::from_f64(6.0).unwrap()));
+        return Err(serde_json::Value::Number(
+            serde_json::Number::from_f64(6.0).unwrap(),
+        ));
     });
     let callback6_example: Resource<Result<String, JsError>> = use_resource(move || async move {
         let output = callback6(cb6).await?;
-        Ok(output) 
+        Ok(output)
     });
 
     rsx!(
-        Dropping {}
         main { style: "padding: 2rem; font-family: sans-serif; line-height: 1.6;",
 
             h1 { "Dioxus `use_js!` Macro Example" }
@@ -194,6 +195,10 @@ fn App() -> Element {
 
             section {
                 h2 { "`RustCallback` Examples" }
+                div {
+                    h3 { "Callback With Dropping:" }
+                    Dropping {}
+                }
                 div {
                     h3 { "Input & Output Callback (expected 16):" }
                     {example_result(&callback1_example.read())}
