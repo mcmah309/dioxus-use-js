@@ -244,7 +244,7 @@ Multiple invocations of a `RustCallback` can be inflight at the same time e.g.
 ```js
 let results = await Promise.all([callback(1), callback(2)]);
 ```
-Depending on the side rust logic (e.g. different network requests), some invocations may finish before others. They do not debounce, wait for finish, or cancel previous requests. If this is desired, one would have to implement this logic themselves. Therefore it may be best to wait for the previous response to finish e.g.
+Depending on the rust logic (e.g. different network requests), some invocations may finish before others. They do not debounce, wait for finish, or cancel previous requests. If this is desired, one would have to implement this logic themselves. Therefore it may be best to wait for the previous response to finish e.g.
 ```js
 let result1 = await callback(1);
 let result2 = await callback(2);
