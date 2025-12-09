@@ -276,7 +276,7 @@ export async function useCallback(
 ```rust,ignore
 pub async fn useCallback(
     startingValue: f64,
-    doubleIt: dioxus::core::Callback<f64, impl Future<Output = Result<f64, serde_json::Value>> + 'static>,
+    doubleIt: Callback<f64, impl Future<Output = Result<f64, Value>> + 'static>,
 ) -> Result<f64, JsError>;
 ```
 
@@ -310,6 +310,8 @@ When the promise completes, the component the function was invoked from has been
 
 **TypeScript:**
 ```ts
+type Drop = Promise<void>;
+
 export async function dropExample(
   value: number,
   drop: Drop
