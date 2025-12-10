@@ -13,7 +13,7 @@ use swc_common::comments::{CommentKind, Comments};
 use swc_common::{SourceMap, Span, comments::SingleThreadedComments};
 use swc_common::{SourceMapper, Spanned};
 use swc_ecma_ast::{
-    Decl, ExportDecl, ExportSpecifier, FnDecl, NamedExport, Pat, TsType, TsTypeAnn, VarDeclarator,
+    ClassDecl, ClassMember, Decl, ExportDecl, ExportSpecifier, FnDecl, NamedExport, Pat, PropName, TsType, TsTypeAnn, VarDeclarator
 };
 use swc_ecma_parser::EsSyntax;
 use swc_ecma_parser::{Parser, StringInput, Syntax, lexer::Lexer};
@@ -135,16 +135,46 @@ struct FunctionInfo {
     doc_comment: Vec<String>,
 }
 
-struct FunctionVisitor {
+#[derive(Debug, Clone)]
+struct MethodInfo {
+    name: String,
+    /// js param types
+    params: Vec<ParamInfo>,
+    // js return type
+    #[allow(unused)]
+    js_return_type: Option<String>,
+    rust_return_type: RustType,
+    is_async: bool,
+    is_static: bool,
+    /// The stripped lines
+    doc_comment: Vec<String>,
+}
+
+#[derive(Debug, Clone)]
+#[allow(dead_code)]
+struct ClassInfo {
+    name: String,
+    /// If specified in the `use_js!` declaration. Used to link the generated code to this span
+    name_ident: Option<Ident>,
+    /// Class methods
+    methods: Vec<MethodInfo>,
+    is_exported: bool,
+    /// The stripped lines
+    doc_comment: Vec<String>,
+}
+
+struct JsVisitor {
     functions: Vec<FunctionInfo>,
+    classes: Vec<ClassInfo>,
     comments: SingleThreadedComments,
     source_map: SourceMap,
 }
 
-impl FunctionVisitor {
+impl JsVisitor {
     fn new(comments: SingleThreadedComments, source_map: SourceMap) -> Self {
         Self {
             functions: Vec::new(),
+            classes: Vec::new(),
             comments,
             source_map,
         }
@@ -582,7 +612,7 @@ fn to_param_info_helper(i: usize, pat: &Pat, source_map: &SourceMap) -> ParamInf
 }
 
 fn function_info_helper<'a, I>(
-    visitor: &FunctionVisitor,
+    visitor: &JsVisitor,
     name: String,
     span: &Span,
     params: I,
@@ -624,7 +654,7 @@ where
     }
 }
 
-impl Visit for FunctionVisitor {
+impl Visit for JsVisitor {
     /// Visit function declarations: function foo() {}
     fn visit_fn_decl(&mut self, node: &FnDecl) {
         let name = node.ident.sym.to_string();
@@ -676,20 +706,88 @@ impl Visit for FunctionVisitor {
         node.visit_children_with(self);
     }
 
-    /// Visit export declarations: export function foo() {}
+    /// Visit export declarations: export function foo() {} or export class Bar {}
     fn visit_export_decl(&mut self, node: &ExportDecl) {
-        if let Decl::Fn(fn_decl) = &node.decl {
-            let span = node.span();
-            let name = fn_decl.ident.sym.to_string();
-            self.functions.push(function_info_helper(
-                &self,
-                name,
-                &span,
-                fn_decl.function.params.iter().map(|e| &e.pat),
-                fn_decl.function.return_type.as_ref(),
-                fn_decl.function.is_async,
-                true,
-            ));
+        match &node.decl {
+            Decl::Fn(fn_decl) => {
+                let span = node.span();
+                let name = fn_decl.ident.sym.to_string();
+                self.functions.push(function_info_helper(
+                    &self,
+                    name,
+                    &span,
+                    fn_decl.function.params.iter().map(|e| &e.pat),
+                    fn_decl.function.return_type.as_ref(),
+                    fn_decl.function.is_async,
+                    true,
+                ));
+            }
+            Decl::Class(class_decl) => {
+                let name = class_decl.ident.sym.to_string();
+                let span = class_decl.class.span();
+                let doc_comment = self.extract_doc_comment(&span);
+                
+                let mut methods = Vec::new();
+
+                for member in &class_decl.class.body {
+                    match member {
+                        ClassMember::Method(method) => {
+                            let method_name = match &method.key {
+                                PropName::Ident(ident) => ident.sym.to_string(),
+                                PropName::Str(str_lit) => str_lit.value.to_string(),
+                                _ => continue,
+                            };
+
+                            let method_span = method.span();
+                            let method_doc = self.extract_doc_comment(&method_span);
+
+                            let params = function_pat_to_param_info(
+                                method.function.params.iter().map(|p| &p.pat),
+                                &self.source_map,
+                            );
+
+                            let js_return_type = method.function.return_type.as_ref().map(|type_ann| {
+                                let ty = &type_ann.type_ann;
+                                type_to_string(ty, &self.source_map)
+                            });
+
+                            let is_async = method.function.is_async;
+                            if !is_async
+                                && js_return_type
+                                    .as_ref()
+                                    .is_some_and(|js_return_type: &String| js_return_type.starts_with("Promise"))
+                            {
+                                panic!(
+                                    "Method `{}` in exported class `{}` returns a Promise but is not marked as async",
+                                    method_name, name
+                                );
+                            }
+
+                            let rust_return_type = ts_type_to_rust_type(js_return_type.as_deref(), false);
+
+                            methods.push(MethodInfo {
+                                name: method_name,
+                                params,
+                                js_return_type,
+                                rust_return_type,
+                                is_async,
+                                is_static: method.is_static,
+                                doc_comment: method_doc,
+                            });
+                        }
+                        _ => {}
+                    }
+                }
+
+                self.classes.push(ClassInfo {
+                    name,
+                    name_ident: None,
+                    methods,
+                    is_exported: true,
+                    doc_comment,
+                });
+            }
+            _ => {}
         }
         node.visit_children_with(self);
     }
@@ -707,17 +805,93 @@ impl Visit for FunctionVisitor {
 
                 if let Some(func) = self.functions.iter_mut().find(|f| f.name == original_name) {
                     let mut func = func.clone();
-                    func.name = out_name;
+                    func.name = out_name.clone();
                     func.is_exported = true;
                     self.functions.push(func);
+                }
+
+                if let Some(class) = self.classes.iter_mut().find(|c| c.name == original_name) {
+                    let mut class = class.clone();
+                    class.name = out_name.clone();
+                    class.is_exported = true;
+                    self.classes.push(class);
                 }
             }
         }
         node.visit_children_with(self);
     }
+
+    /// Visit class declarations: class Foo {}
+    fn visit_class_decl(&mut self, node: &ClassDecl) {
+        let name = node.ident.sym.to_string();
+        let span = node.class.span();
+        let doc_comment = self.extract_doc_comment(&span);
+        
+        let mut methods = Vec::new();
+
+        for member in &node.class.body {
+            match member {
+                ClassMember::Method(method) => {
+                    let method_name = match &method.key {
+                        PropName::Ident(ident) => ident.sym.to_string(),
+                        PropName::Str(str_lit) => str_lit.value.to_string(),
+                        _ => continue,
+                    };
+
+                    let method_span = method.span();
+                    let method_doc = self.extract_doc_comment(&method_span);
+
+                    let params = function_pat_to_param_info(
+                        method.function.params.iter().map(|p| &p.pat),
+                        &self.source_map,
+                    );
+
+                    let js_return_type = method.function.return_type.as_ref().map(|type_ann| {
+                        let ty = &type_ann.type_ann;
+                        type_to_string(ty, &self.source_map)
+                    });
+
+                    let is_async = method.function.is_async;
+                    if !is_async
+                        && js_return_type
+                            .as_ref()
+                            .is_some_and(|js_return_type: &String| js_return_type.starts_with("Promise"))
+                    {
+                        panic!(
+                            "Function `{}` in class `{}` returns a Promise but is not marked as async",
+                            method_name, name
+                        );
+                    }
+
+                    let rust_return_type = ts_type_to_rust_type(js_return_type.as_deref(), false);
+
+                    methods.push(MethodInfo {
+                        name: method_name,
+                        params,
+                        js_return_type,
+                        rust_return_type,
+                        is_async,
+                        is_static: method.is_static,
+                        doc_comment: method_doc,
+                    });
+                }
+                _ => {}
+            }
+        }
+
+        self.classes.push(ClassInfo {
+            name,
+            name_ident: None,
+            methods,
+            is_exported: false,
+            doc_comment,
+        });
+
+        node.visit_children_with(self);
+    }
 }
 
-fn parse_script_file(file_path: &Path, is_js: bool) -> Result<Vec<FunctionInfo>> {
+fn parse_script_file(file_path: &Path, is_js: bool) -> Result<(Vec<FunctionInfo>, Vec<ClassInfo>)> {
     let js_content = fs::read_to_string(file_path).map_err(|e| {
         syn::Error::new(
             proc_macro2::Span::call_site(),
@@ -776,14 +950,17 @@ fn parse_script_file(file_path: &Path, is_js: bool) -> Result<Vec<FunctionInfo>>
         )
     })?;
 
-    let mut visitor = FunctionVisitor::new(comments, source_map);
+    let mut visitor = JsVisitor::new(comments, source_map);
     module.visit_with(&mut visitor);
 
-    // Functions are added twice for some reason.
+    // Functions and classes are added twice for some reason.
     visitor
         .functions
         .dedup_by(|e1, e2| e1.name.as_str() == e2.name.as_str());
-    Ok(visitor.functions)
+    visitor
+        .classes
+        .dedup_by(|e1, e2| e1.name.as_str() == e2.name.as_str());
+    Ok((visitor.functions, visitor.classes))
 }
 
 fn take_function_by_name(
@@ -1356,8 +1533,8 @@ pub fn use_js(input: TokenStream) -> TokenStream {
 
     let js_file_path = std::path::Path::new(&manifest_dir).join(js_bundle_path.value());
 
-    let js_all_functions = match parse_script_file(&js_file_path, true) {
-        Ok(funcs) => funcs,
+    let (js_all_functions, _js_all_classes) = match parse_script_file(&js_file_path, true) {
+        Ok(result) => result,
         Err(e) => return TokenStream::from(e.to_compile_error()),
     };
 
@@ -1369,8 +1546,8 @@ pub fn use_js(input: TokenStream) -> TokenStream {
 
     let functions_to_generate = if let Some(ts_file_path) = ts_source_path {
         let ts_file_path = std::path::Path::new(&manifest_dir).join(ts_file_path.value());
-        let ts_all_functions = match parse_script_file(&ts_file_path, false) {
-            Ok(funcs) => funcs,
+        let (ts_all_functions, _ts_all_classes) = match parse_script_file(&ts_file_path, false) {
+            Ok(result) => result,
             Err(e) => return TokenStream::from(e.to_compile_error()),
         };
 
@@ -1818,5 +1995,103 @@ mod tests {
             ts_type_to_rust_type(Some("JsValue | null"), false).to_string(),
             "Option<dioxus_use_js::JsValue>"
         );
+    }
+
+    #[test]
+    fn test_class_parsing() {
+        let ts_content = r#"
+            /**
+             * A test class
+             */
+            export class MyClass {
+                constructor(name: string, value: number) {}
+                
+                /**
+                 * Instance method
+                 */
+                greet(greeting: string): string {
+                    return greeting;
+                }
+                
+                /**
+                 * Async method
+                 */
+                async fetchData(url: string): Promise<string> {
+                    return "data";
+                }
+                
+                /**
+                 * Static method
+                 */
+                static create(): MyClass {
+                    return new MyClass("test", 0);
+                }
+            }
+        "#;
+
+        let source_map = SourceMap::default();
+        let fm = source_map.new_source_file(
+            swc_common::FileName::Custom("test.ts".to_string()).into(),
+            ts_content.to_string(),
+        );
+        let comments = SingleThreadedComments::default();
+
+        let syntax = Syntax::Typescript(swc_ecma_parser::TsSyntax {
+            tsx: false,
+            decorators: false,
+            dts: false,
+            no_early_errors: false,
+            disallow_ambiguous_jsx_like: true,
+        });
+
+        let lexer = Lexer::new(
+            syntax,
+            Default::default(),
+            StringInput::from(&*fm),
+            Some(&comments),
+        );
+
+        let mut parser = Parser::new_from(lexer);
+        let module = parser.parse_module().unwrap();
+
+        let mut visitor = JsVisitor::new(comments, source_map);
+        module.visit_with(&mut visitor);
+
+        // Dedup classes (as done in parse_script_file)
+        visitor
+            .classes
+            .dedup_by(|e1, e2| e1.name.as_str() == e2.name.as_str());
+
+        // Verify we parsed the class
+        assert_eq!(visitor.classes.len(), 1);
+        let class = &visitor.classes[0];
+        assert_eq!(class.name, "MyClass");
+        assert_eq!(class.is_exported, true);
+
+        // Verify methods
+        assert_eq!(class.methods.len(), 3);
+
+        let greet = &class.methods[0];
+        assert_eq!(greet.name, "greet");
+        assert_eq!(greet.is_async, false);
+        assert_eq!(greet.is_static, false);
+        assert_eq!(greet.params.len(), 1);
+        assert_eq!(greet.params[0].name, "greeting");
+        assert_eq!(greet.params[0].rust_type.to_string(), "&str");
+        assert_eq!(greet.rust_return_type.to_string(), "String");
+
+        let fetch_data = &class.methods[1];
+        assert_eq!(fetch_data.name, "fetchData");
+        assert_eq!(fetch_data.is_async, true);
+        assert_eq!(fetch_data.is_static, false);
+        assert_eq!(fetch_data.params.len(), 1);
+        assert_eq!(fetch_data.rust_return_type.to_string(), "String");
+
+        let create = &class.methods[2];
+        assert_eq!(create.name, "create");
+        assert_eq!(create.is_async, false);
+        assert_eq!(create.is_static, true);
+        assert_eq!(create.params.len(), 0);
+        // Note: The return type MyClass would be parsed as JsValue or unknown type
     }
 }
