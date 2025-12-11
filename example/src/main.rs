@@ -153,6 +153,20 @@ fn App() -> Element {
         Ok(output)
     });
 
+    let counter_static_example: Resource<Result<f64, JsError>> = use_resource(|| async move {
+        let result = Counter::add(5.0, 10.0).await?;
+        Ok(result)
+    });
+
+    let counter_instance_example: Resource<Result<f64, JsError>> = use_resource(|| async move {
+        let counter = Counter::new(Counter::createDefault().await?);
+        let _initial = counter.getCount().await?;
+        counter.increment(10.0).await?;
+        counter.doubleAsync().await?;
+        let final_count = counter.increment(2.0).await?;
+        Ok(final_count)
+    });
+
     rsx!(
         main { style: "padding: 2rem; font-family: sans-serif; line-height: 1.6;",
 
@@ -229,6 +243,18 @@ fn App() -> Element {
                 div {
                     h3 { "Callback That Returns An Error (6 should be thrown in js):" }
                     {example_result(&callback6_example.read())}
+                }
+            }
+
+            section {
+                h2 { "Class Example: `Counter`" }
+                div {
+                    h3 { "Static Method (expected 15):" }
+                    {example_result(&counter_static_example.read())}
+                }
+                div {
+                    h3 { "Instance Methods (expected count: 22):" }
+                    {example_result(&counter_instance_example.read())}
                 }
             }
         }

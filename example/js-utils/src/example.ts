@@ -130,6 +130,57 @@ export async function dropOnly(drop: Drop): Promise<number> {
     return 11;
 }
 
+//************************************************************************//
+
+/**
+ * Class test
+ */
+export class Counter {
+    private count: number;
+
+    constructor(initialValue: number) {
+        this.count = initialValue;
+    }
+
+    /**
+     * Get the current count
+     */
+    getCount(): number {
+        return this.count;
+    }
+
+    /**
+     * Increment the counter by a value
+     */
+    increment(value: number): number {
+        this.count += value;
+        return this.count;
+    }
+
+    /**
+     * Async method to double the count
+     */
+    async doubleAsync(): Promise<number> {
+        await sleep(10);
+        this.count *= 2;
+        return this.count;
+    }
+
+    /**
+     * Static factory method
+     */
+    static createDefault(): JsValue<Counter> {
+        return new Counter(0);
+    }
+
+    /**
+     * Static method to add two numbers
+     */
+    static add(a: number, b: number): number {
+        return a + b;
+    }
+}
+
 // Functions not used in example but still generated through `*`
 //************************************************************************//
 

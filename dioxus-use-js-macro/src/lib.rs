@@ -10,10 +10,11 @@ use std::collections::HashMap;
 use std::str::FromStr;
 use std::{fs, path::Path};
 use swc_common::comments::{CommentKind, Comments};
-use swc_common::{SourceMap, Span, comments::SingleThreadedComments};
+use swc_common::{SourceMap, comments::SingleThreadedComments};
 use swc_common::{SourceMapper, Spanned};
 use swc_ecma_ast::{
-    ClassDecl, ClassMember, Decl, ExportDecl, ExportSpecifier, FnDecl, NamedExport, Pat, PropName, TsType, TsTypeAnn, VarDeclarator
+    ClassDecl, ClassMember, Decl, ExportDecl, ExportSpecifier, FnDecl, NamedExport, Pat, PropName,
+    TsType, TsTypeAnn, VarDeclarator,
 };
 use swc_ecma_parser::EsSyntax;
 use swc_ecma_parser::{Parser, StringInput, Syntax, lexer::Lexer};
@@ -104,7 +105,6 @@ impl Parse for UseJsInput {
 #[derive(Debug, Clone)]
 struct ParamInfo {
     name: String,
-    #[allow(unused)]
     js_type: Option<String>,
     rust_type: RustType,
 }
@@ -122,11 +122,10 @@ impl ParamInfo {
 struct FunctionInfo {
     name: String,
     /// If specified in the `use_js!` declaration. Used to link the generated code to this span
-    name_ident: Option<Ident>,
+    ident: Option<Ident>,
     /// js param types
     params: Vec<ParamInfo>,
     // js return type
-    #[allow(unused)]
     js_return_type: Option<String>,
     rust_return_type: RustType,
     is_exported: bool,
@@ -141,7 +140,6 @@ struct MethodInfo {
     /// js param types
     params: Vec<ParamInfo>,
     // js return type
-    #[allow(unused)]
     js_return_type: Option<String>,
     rust_return_type: RustType,
     is_async: bool,
@@ -155,7 +153,7 @@ struct MethodInfo {
 struct ClassInfo {
     name: String,
     /// If specified in the `use_js!` declaration. Used to link the generated code to this span
-    name_ident: Option<Ident>,
+    ident: Option<Ident>,
     /// Class methods
     methods: Vec<MethodInfo>,
     is_exported: bool,
@@ -180,7 +178,7 @@ impl JsVisitor {
         }
     }
 
-    fn extract_doc_comment(&self, span: &Span) -> Vec<String> {
+    fn extract_doc_comment(&self, span: &swc_common::Span) -> Vec<String> {
         // Get leading comments for the span
         let leading_comment = self.comments.get_leading(span.lo());
 
@@ -614,7 +612,7 @@ fn to_param_info_helper(i: usize, pat: &Pat, source_map: &SourceMap) -> ParamInf
 fn function_info_helper<'a, I>(
     visitor: &JsVisitor,
     name: String,
-    span: &Span,
+    span: &swc_common::Span,
     params: I,
     return_type: Option<&Box<TsTypeAnn>>,
     is_async: bool,
@@ -644,7 +642,7 @@ where
 
     FunctionInfo {
         name,
-        name_ident: None,
+        ident: None,
         params,
         js_return_type,
         rust_return_type,
@@ -726,7 +724,6 @@ impl Visit for JsVisitor {
                 let name = class_decl.ident.sym.to_string();
                 let span = class_decl.class.span();
                 let doc_comment = self.extract_doc_comment(&span);
-                
                 let mut methods = Vec::new();
 
                 for member in &class_decl.class.body {
@@ -746,16 +743,19 @@ impl Visit for JsVisitor {
                                 &self.source_map,
                             );
 
-                            let js_return_type = method.function.return_type.as_ref().map(|type_ann| {
-                                let ty = &type_ann.type_ann;
-                                type_to_string(ty, &self.source_map)
-                            });
+                            let js_return_type =
+                                method.function.return_type.as_ref().map(|type_ann| {
+                                    let ty = &type_ann.type_ann;
+                                    type_to_string(ty, &self.source_map)
+                                });
 
                             let is_async = method.function.is_async;
                             if !is_async
                                 && js_return_type
                                     .as_ref()
-                                    .is_some_and(|js_return_type: &String| js_return_type.starts_with("Promise"))
+                                    .is_some_and(|js_return_type: &String| {
+                                        js_return_type.starts_with("Promise")
+                                    })
                             {
                                 panic!(
                                     "Method `{}` in exported class `{}` returns a Promise but is not marked as async",
@@ -763,7 +763,8 @@ impl Visit for JsVisitor {
                                 );
                             }
 
-                            let rust_return_type = ts_type_to_rust_type(js_return_type.as_deref(), false);
+                            let rust_return_type =
+                                ts_type_to_rust_type(js_return_type.as_deref(), false);
 
                             methods.push(MethodInfo {
                                 name: method_name,
@@ -781,7 +782,7 @@ impl Visit for JsVisitor {
 
                 self.classes.push(ClassInfo {
                     name,
-                    name_ident: None,
+                    ident: None,
                     methods,
                     is_exported: true,
                     doc_comment,
@@ -824,9 +825,8 @@ impl Visit for JsVisitor {
     /// Visit class declarations: class Foo {}
     fn visit_class_decl(&mut self, node: &ClassDecl) {
         let name = node.ident.sym.to_string();
-        let span = node.class.span();
+        let span = node.span();
         let doc_comment = self.extract_doc_comment(&span);
-        
         let mut methods = Vec::new();
 
         for member in &node.class.body {
@@ -855,7 +855,9 @@ impl Visit for JsVisitor {
                     if !is_async
                         && js_return_type
                             .as_ref()
-                            .is_some_and(|js_return_type: &String| js_return_type.starts_with("Promise"))
+                            .is_some_and(|js_return_type: &String| {
+                                js_return_type.starts_with("Promise")
+                            })
                     {
                         panic!(
                             "Function `{}` in class `{}` returns a Promise but is not marked as async",
@@ -881,7 +883,7 @@ impl Visit for JsVisitor {
 
         self.classes.push(ClassInfo {
             name,
-            name_ident: None,
+            ident: None,
             methods,
             is_exported: false,
             doc_comment,
@@ -963,69 +965,231 @@ fn parse_script_file(file_path: &Path, is_js: bool) -> Result<(Vec<FunctionInfo>
     Ok((visitor.functions, visitor.classes))
 }
 
-fn take_function_by_name(
-    name: &str,
-    functions: &mut Vec<FunctionInfo>,
-    file: &Path,
-) -> Result<FunctionInfo> {
-    let function_info = if let Some(pos) = functions.iter().position(|f| f.name == name) {
-        functions.remove(pos)
-    } else {
-        return Err(syn::Error::new(
-            proc_macro2::Span::call_site(),
-            format!("Function '{}' not found in file '{}'", name, file.display()),
-        ));
-    };
-    if !function_info.is_exported {
-        return Err(syn::Error::new(
-            proc_macro2::Span::call_site(),
-            format!(
-                "Function '{}' not exported in file '{}'",
-                name,
-                file.display()
-            ),
-        ));
-    }
-    Ok(function_info)
-}
-
-fn get_functions_to_generate(
-    mut functions: Vec<FunctionInfo>,
+fn get_types_to_generate(
+    classes: Vec<ClassInfo>,
+    functions: Vec<FunctionInfo>,
     import_spec: &ImportSpec,
     file: &Path,
-) -> Result<Vec<FunctionInfo>> {
-    match import_spec {
-        ImportSpec::All => Ok(functions.into_iter().filter(|e| e.is_exported).collect()),
-        ImportSpec::Single(name) => {
-            let mut func = take_function_by_name(name.to_string().as_str(), &mut functions, file)?;
-            func.name_ident.replace(name.clone());
-            Ok(vec![func])
-        }
-        ImportSpec::Named(names) => {
-            let mut result = Vec::new();
-            for name in names {
-                let mut func =
-                    take_function_by_name(name.to_string().as_str(), &mut functions, file)?;
-                func.name_ident.replace(name.clone());
-                result.push(func);
+) -> Result<(Vec<ClassInfo>, Vec<FunctionInfo>)> {
+    fn named_helper(
+        names: &Vec<Ident>,
+        mut classes: Vec<ClassInfo>,
+        mut functions: Vec<FunctionInfo>,
+        file: &Path,
+    ) -> Result<(Vec<ClassInfo>, Vec<FunctionInfo>)> {
+        let mut funcs = Vec::new();
+        let mut classes = Vec::new();
+        for name in names {
+            let name_str = name.to_string();
+            if let Some(pos) = functions
+                .iter()
+                .position(|f: &FunctionInfo| f.name == name_str)
+            {
+                let mut function_info = functions.remove(pos);
+                if !function_info.is_exported {
+                    return Err(syn::Error::new(
+                        proc_macro2::Span::call_site(),
+                        format!(
+                            "Function '{}' not exported in file '{}'",
+                            name,
+                            file.display()
+                        ),
+                    ));
+                }
+                function_info.ident.replace(name.clone());
+                funcs.push(function_info);
+            } else if let Some(pos) = classes.iter().position(|c: &ClassInfo| c.name == name_str) {
+                let mut class_info = classes.remove(pos);
+                if !class_info.is_exported {
+                    return Err(syn::Error::new(
+                        proc_macro2::Span::call_site(),
+                        format!("Class '{}' not exported in file '{}'", name, file.display()),
+                    ));
+                }
+                class_info.ident.replace(name.clone());
+                classes.push(class_info);
+            } else {
+                return Err(syn::Error::new(
+                    proc_macro2::Span::call_site(),
+                    format!(
+                        "Function or Class '{}' not found in file '{}'",
+                        name,
+                        file.display()
+                    ),
+                ));
             }
-            Ok(result)
+        }
+        Ok((classes, funcs))
+    }
+    match import_spec {
+        ImportSpec::All => Ok((
+            classes.into_iter().filter(|e| e.is_exported).collect(),
+            functions.into_iter().filter(|e| e.is_exported).collect(),
+        )),
+        ImportSpec::Single(name) => named_helper(&vec![name.clone()], classes, functions, file),
+        ImportSpec::Named(names) => named_helper(names, classes, functions, file),
+    }
+}
+
+fn generate_class_wrapper(
+    class: &ClassInfo,
+    asset_path: &LitStr,
+    function_id_hasher: &blake3::Hasher,
+) -> TokenStream2 {
+    let class_ident = class
+        .ident
+        .clone()
+        .unwrap_or_else(|| Ident::new(class.name.as_str(), proc_macro2::Span::call_site()));
+
+    let doc_comment = if class.doc_comment.is_empty() {
+        quote! {}
+    } else {
+        let doc_lines: Vec<_> = class
+            .doc_comment
+            .iter()
+            .map(|line| quote! { #[doc = #line] })
+            .collect();
+        quote! { #(#doc_lines)* }
+    };
+
+    let mut parts: Vec<TokenStream2> = Vec::new();
+    for method in &class.methods {
+        let func_info = FunctionInfo {
+            name: method.name.clone(),
+            ident: None,
+            params: method.params.clone(),
+            js_return_type: method.js_return_type.clone(),
+            rust_return_type: method.rust_return_type.clone(),
+            is_exported: true,
+            is_async: method.is_async,
+            doc_comment: method.doc_comment.clone(),
+        };
+
+        let inner_function = generate_invocation(
+            Some(FunctionClassContext {
+                class_name: class.name.clone(),
+                ident: class_ident.clone(),
+                is_static: method.is_static,
+            }),
+            &func_info,
+            asset_path,
+            function_id_hasher,
+        );
+
+        let method_name = format_ident!("{}", method.name);
+        let method_params: Vec<_> = method
+            .params
+            .iter()
+            .filter_map(|param| {
+                if param.is_drop() {
+                    return None;
+                }
+                let param_name = format_ident!("{}", param.name);
+                let type_tokens = param.rust_type.to_tokens();
+                Some(quote! { #param_name: #type_tokens })
+            })
+            .collect();
+
+        let (return_type_tokens, generic_tokens) = return_type_tokens(
+            &method.rust_return_type,
+            class.ident.as_ref().map(|e| e.span()),
+        );
+
+        let method_doc = if method.doc_comment.is_empty() {
+            quote! {}
+        } else {
+            let doc_lines: Vec<_> = method
+                .doc_comment
+                .iter()
+                .map(|line| quote! { #[doc = #line] })
+                .collect();
+            quote! { #(#doc_lines)* }
+        };
+
+        let param_names: Vec<_> = method
+            .params
+            .iter()
+            .map(|p| format_ident!("{}", p.name))
+            .collect();
+
+        let part = if method.is_static {
+            quote! {
+                #method_doc
+                #[allow(non_snake_case)]
+                pub async fn #method_name #generic_tokens(#(#method_params),*) -> #return_type_tokens {
+                    #inner_function
+                    #method_name(#(#param_names),*).await
+                }
+            }
+        } else {
+            quote! {
+                #method_doc
+                #[allow(non_snake_case)]
+                pub async fn #method_name #generic_tokens(&self, #(#method_params),*) -> #return_type_tokens {
+                    #inner_function
+                    #method_name(&self.0, #(#param_names),*).await
+                }
+            }
+        };
+
+        parts.push(part);
+    }
+
+    quote! {
+        #doc_comment
+        #[derive(Clone, Debug)]
+        pub struct #class_ident(dioxus_use_js::JsValue);
+
+        impl #class_ident {
+            pub fn new(js_value: dioxus_use_js::JsValue) -> Self {
+                Self(js_value)
+            }
+        }
+
+        impl #class_ident {
+            #(#parts)*
+        }
+
+        impl AsRef<dioxus_use_js::JsValue> for #class_ident {
+            fn as_ref(&self) -> &dioxus_use_js::JsValue {
+                &self.0
+            }
         }
     }
 }
 
-fn generate_function_wrapper(
+struct FunctionClassContext {
+    class_name: String,
+    ident: Ident,
+    is_static: bool,
+}
+
+fn generate_invocation(
+    class: Option<FunctionClassContext>,
     func: &FunctionInfo,
     asset_path: &LitStr,
     function_id_hasher: &blake3::Hasher,
 ) -> TokenStream2 {
+    let is_class_method = class.as_ref().is_some_and(|e| !e.is_static);
+    let mut params = func.params.clone();
+    if is_class_method {
+        let new_param = ParamInfo {
+            name: "_m_".to_owned(),
+            js_type: None,
+            rust_type: RustType::JsValue(JsValue {
+                is_option: false,
+                is_input: true,
+            }),
+        };
+        params.insert(0, new_param);
+    }
     // If we have callbacks, we cant do a simpl return, we have to do message passing
     let mut callback_name_to_index: HashMap<String, u64> = HashMap::new();
     let mut callback_name_to_info: IndexMap<String, &RustCallback> = IndexMap::new();
     let mut index: u64 = 0;
     let mut needs_drop = false;
     let mut has_callbacks = false;
-    for param in &func.params {
+    for param in &params {
         if let RustType::Callback(callback) = &param.rust_type {
             callback_name_to_index.insert(param.name.to_owned(), index);
             index += 1;
@@ -1036,11 +1200,10 @@ fn generate_function_wrapper(
             needs_drop = true;
         }
     }
-    let js_func_name = &func.name;
-    let js_func_name_ident = quote! { FUNC_NAME };
+    let func_name_str = &func.name;
+    let func_name_static_ident = quote! { FUNC_NAME };
 
-    let send_calls: Vec<TokenStream2> = func
-        .params
+    let send_calls: Vec<TokenStream2> = params
         .iter()
         .flat_map(|param| {
             if param.is_drop() {
@@ -1049,18 +1212,18 @@ fn generate_function_wrapper(
             let param_name = format_ident!("{}", param.name);
             match &param.rust_type {
                 RustType::Regular(_) => Some(quote! {
-                    eval.send(#param_name).map_err(|e| dioxus_use_js::JsError::Eval { func: #js_func_name_ident, error: e })?;
+                    eval.send(#param_name).map_err(|e| dioxus_use_js::JsError::Eval { func: #func_name_static_ident, error: e })?;
                 }),
                 RustType::JsValue(js_value) => {
                     if js_value.is_option {
                         Some(quote! {
                             #[allow(deprecated)]
-                            eval.send(#param_name.map(|e| e.internal_get())).map_err(|e| dioxus_use_js::JsError::Eval { func: #js_func_name_ident, error: e })?;
+                            eval.send(#param_name.map(|e| e.internal_get())).map_err(|e| dioxus_use_js::JsError::Eval { func: #func_name_static_ident, error: e })?;
                         })
                     } else {
                         Some(quote! {
                             #[allow(deprecated)]
-                            eval.send(#param_name.internal_get()).map_err(|e| dioxus_use_js::JsError::Eval { func: #js_func_name_ident, error: e })?;
+                            eval.send(#param_name.internal_get()).map_err(|e| dioxus_use_js::JsError::Eval { func: #func_name_static_ident, error: e })?;
                         })
                     }
                 },
@@ -1071,7 +1234,8 @@ fn generate_function_wrapper(
         })
         .collect();
 
-    let params_list = func
+    // Note we use `func.params` here
+    let call_params = &func
         .params
         .iter()
         .map(|p| p.name.as_str())
@@ -1085,8 +1249,7 @@ fn generate_function_wrapper(
     } else {
         ""
     };
-    let param_declarations = func
-        .params
+    let param_declarations = &params
         .iter()
         .map(|param| {
             if needs_drop && param.is_drop() {
@@ -1100,12 +1263,12 @@ fn generate_function_wrapper(
                 let param_name = &param.name;
                 if js_value.is_option {
                 format!(
-                    "let {param_name}Temp_=await dioxus.recv();let {param_name}=null;if({param_name}Temp_!==null){{{param_name}=window[{param_name}Temp_]}};",
+                    "let _{param_name}T_=await dioxus.recv();let {param_name}=null;if(_{param_name}T_!==null){{{param_name}=window[_{param_name}T_]}};",
                 )
             }
             else {
                 format!(
-                    "let {param_name}Temp_=await dioxus.recv();let {param_name}=window[{param_name}Temp_];",
+                    "let _{param_name}T_=await dioxus.recv();let {param_name}=window[_{param_name}T_];",
                 )
             }
             },
@@ -1150,9 +1313,18 @@ fn generate_function_wrapper(
     if func.is_async {
         maybe_await.push_str("await");
     }
+    let func_call_full_path = if is_class_method {
+        let var_name = &params.first().unwrap().name;
+        format!("{var_name}.{func_name_str}")
+    } else if let Some(class) = &class {
+        let class_name = &class.class_name;
+        format!("{class_name}.{func_name_str}")
+    } else {
+        func_name_str.to_owned()
+    };
     let call_function = match &func.rust_return_type {
         RustType::Regular(_) => {
-            format!("return [true, {maybe_await} {js_func_name}({params_list})];")
+            format!("return [true, {maybe_await} {func_call_full_path}({call_params})];")
         }
         RustType::Callback(_) => {
             unreachable!("This cannot be an output type, the macro should have panicked earlier.")
@@ -1163,11 +1335,11 @@ fn generate_function_wrapper(
                 "if (_v_===null||_v_===undefined){return [true,null];}".to_owned()
             } else {
                 format!(
-                    "if (_v_===null||_v_===undefined){{console.error(\"The result of `{js_func_name}` was null or undefined, but a value is needed for JsValue\");return [true,null];}}"
+                    "if (_v_===null||_v_===undefined){{console.error(\"The result of `{func_call_full_path}` was null or undefined, but a value is needed for JsValue\");return [true,null];}}"
                 )
             };
             format!(
-                "const _v_={maybe_await} {js_func_name}({params_list});{check}let _j_=\"__js-value-\"+crypto.randomUUID();window[_j_]=_v_;return [true,_j_];"
+                "const _v_={maybe_await} {func_call_full_path}({call_params});{check}let _j_=\"__js-value-\"+crypto.randomUUID();window[_j_]=_v_;return [true,_j_];"
             )
         }
     };
@@ -1197,9 +1369,21 @@ fn generate_function_wrapper(
     };
     let asset_path_string = asset_path.value();
     // Note: eval will fail if returning undefined. undefined happens if there is no return type
-    let js = format!(
-        "const{{{js_func_name}}}=await import(\"{asset_path_string}\");{prepare}{drop_declare}{param_declarations}{drop_handle}try{{{call_function}}}catch(e){{console.warn(\"Executing `{js_func_name}` threw:\", e);return [false,null];}}{finally}"
-    );
+    let js = if is_class_method {
+        format!(
+            "{prepare}{drop_declare}{param_declarations}{drop_handle}try{{{call_function}}}catch(e){{console.warn(\"Executing `{func_call_full_path}` threw:\", e);return [false,null];}}{finally}"
+        )
+    } else if let Some(class) = &class {
+        let class_name = &class.class_name;
+        format!(
+            "const{{{class_name}}}=await import(\"{asset_path_string}\");{prepare}{drop_declare}{param_declarations}{drop_handle}try{{{call_function}}}catch(e){{console.warn(\"Executing `{func_call_full_path}` threw:\", e);return [false,null];}}{finally}"
+        )
+    } else {
+        assert_eq!(func_call_full_path.as_str(), func_name_str);
+        format!(
+            "const{{{func_name_str}}}=await import(\"{asset_path_string}\");{prepare}{drop_declare}{param_declarations}{drop_handle}try{{{call_function}}}catch(e){{console.warn(\"Executing `{func_call_full_path}` threw:\", e);return [false,null];}}{finally}"
+        )
+    };
     fn to_raw_string_literal(s: &str) -> Literal {
         let mut hashes = String::from("#");
         while s.contains(&format!("\"{}", hashes)) {
@@ -1215,19 +1399,64 @@ fn generate_function_wrapper(
         #[doc = #comment]
         fn ___above_is_the_generated_js___() {}
     };
-    let js_format = js
-        .replace("{", "{{")
-        .replace("}", "}}")
-        .replace(&asset_path_string, "{}");
+    let js_format = js.replace("{", "{{").replace("}", "}}");
+    let js_format = if is_class_method {
+        assert!(!js_format.contains(&asset_path_string));
+        js_format
+    } else {
+        js_format.replace(&asset_path_string, "{}")
+    };
     let js_format = if needs_drop {
         js_format.replace("**INVOCATION_ID**", "{}")
     } else {
         js_format
     };
+    let js_eval_statement = if needs_drop {
+        let js_line = if is_class_method {
+            quote! {
+            let js = format!(#js_format, &invocation_id);
+            }
+        } else {
+            quote! {
+                const MODULE: Asset = asset!(#asset_path);
+                let js = format!(#js_format, MODULE, &invocation_id);
+            }
+        };
+        let function_id = {
+            let mut hasher = function_id_hasher.clone();
+            hasher.update(func_call_full_path.as_bytes());
+            let mut output_reader = hasher.finalize_xof();
+            let mut truncated_bytes = vec![0u8; 10];
+            use std::io::Read;
+            output_reader.read_exact(&mut truncated_bytes).unwrap();
+            let function_id =
+                base64::engine::general_purpose::STANDARD_NO_PAD.encode(truncated_bytes);
+            function_id
+        };
+        quote! {
+            static INVOCATION_NUM: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+            // Each invocation id guarentees a unique namespace for the callback invocation for requests/responses and on drop everything there can be cleaned up and outstanding promises rejected.
+            let invocation_id = format!("__{}{}", #function_id, INVOCATION_NUM.fetch_add(1, std::sync::atomic::Ordering::Relaxed));
+            #js_line
+            let mut eval = dioxus::document::eval(js.as_str());
+        }
+    } else {
+        if is_class_method {
+            quote! {
+                let js = #js_format;
+                let mut eval = dioxus::document::eval(js);
+            }
+        } else {
+            quote! {
+                const MODULE: Asset = asset!(#asset_path);
+                let js = format!(#js_format, MODULE);
+                let mut eval = dioxus::document::eval(js.as_str());
+            }
+        }
+    };
 
     // Generate parameter types with extracted type information
-    let param_types: Vec<_> = func
-        .params
+    let param_types: Vec<_> = params
         .iter()
         .filter_map(|param| {
             if param.is_drop() {
@@ -1235,35 +1464,14 @@ fn generate_function_wrapper(
             }
             let param_name = format_ident!("{}", param.name);
             let type_tokens = param.rust_type.to_tokens();
-            if let RustType::Callback(_) = param.rust_type {
-                Some(quote! { mut #param_name: #type_tokens })
-            } else {
-                Some(quote! { #param_name: #type_tokens })
-            }
+            Some(quote! { #param_name: #type_tokens })
         })
         .collect();
 
-    let parsed_type = func.rust_return_type.to_tokens();
-    let (return_type_tokens, generic_tokens) = if func.rust_return_type.to_string()
-        == DEFAULT_GENERIC_OUTPUT
-    {
-        let span = func
-            .name_ident
-            .as_ref()
-            .map(|e| e.span())
-            .unwrap_or_else(|| proc_macro2::Span::call_site());
-        let generic = Ident::new(DEFAULT_GENERIC_OUTPUT, span);
-        let generic_decl: TypeParam = syn::parse_str(DEFAULT_OUTPUT_GENERIC_DECLARTION).unwrap();
-        (
-            quote! { Result<#generic, dioxus_use_js::JsError> },
-            Some(quote! { <#generic_decl> }),
-        )
-    } else {
-        (
-            quote! { Result<#parsed_type, dioxus_use_js::JsError> },
-            None,
-        )
-    };
+    let (return_type_tokens, generic_tokens) = return_type_tokens(
+        &func.rust_return_type,
+        func.ident.as_ref().map(|e| e.span()),
+    );
 
     // Generate documentation comment if available - preserve original JSDoc format
     let doc_comment = if func.doc_comment.is_empty() {
@@ -1278,7 +1486,7 @@ fn generate_function_wrapper(
     };
 
     let func_name = func
-        .name_ident
+        .ident
         .clone()
         // Can not exist if `::*`
         .unwrap_or_else(|| Ident::new(func.name.as_str(), proc_macro2::Span::call_site()));
@@ -1291,7 +1499,7 @@ fn generate_function_wrapper(
                     Ok(())
                 } else {
                     Err(dioxus_use_js::JsError::Eval {
-                        func: #js_func_name_ident,
+                        func: #func_name_static_ident,
                         error: dioxus::document::EvalError::Serialization(
                             <dioxus_use_js::SerdeJsonError as dioxus_use_js::SerdeDeError>::custom(dioxus_use_js::__BAD_VOID_RETURN.to_owned())
                         )
@@ -1444,7 +1652,7 @@ fn generate_function_wrapper(
     let end_statement = quote! {
         let value = eval.await.map_err(|e| {
             dioxus_use_js::JsError::Eval {
-                func: #js_func_name_ident,
+                func: #func_name_static_ident,
                 error: e,
             }
         })?;
@@ -1460,50 +1668,48 @@ fn generate_function_wrapper(
             let value = values.next().unwrap();
             return dioxus_use_js::serde_json_from_value(value).map_err(|e| {
                 dioxus_use_js::JsError::Eval {
-                    func: #js_func_name_ident,
+                    func: #func_name_static_ident,
                     error: dioxus::document::EvalError::Serialization(e),
                 }
             })
             #void_output_mapping;
         } else {
-             return Err(dioxus_use_js::JsError::Threw { func: #js_func_name_ident });
+             return Err(dioxus_use_js::JsError::Threw { func: #func_name_static_ident });
         }
-    };
-
-    let function_id = {
-        let mut hasher = function_id_hasher.clone();
-        hasher.update(js_func_name.as_bytes());
-        let mut output_reader = hasher.finalize_xof();
-        let mut truncated_bytes = vec![0u8; 10];
-        use std::io::Read;
-        output_reader.read_exact(&mut truncated_bytes).unwrap();
-        let function_id = base64::engine::general_purpose::STANDARD_NO_PAD.encode(truncated_bytes);
-        function_id
-    };
-    let js_string = if needs_drop {
-        quote! {
-            static INVOCATION_NUM: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
-            // Each invocation id guarentees a unique namespace for the callback invocation for requests/responses and on drop everything there can be cleaned up and outstanding promises rejected.
-            let invocation_id = format!("__{}{}", #function_id, INVOCATION_NUM.fetch_add(1, std::sync::atomic::Ordering::Relaxed));
-            let js = format!(#js_format, MODULE, &invocation_id);
-        }
-    } else {
-        quote! {let js = format!(#js_format, MODULE);}
     };
 
     quote! {
         #doc_comment
         #[allow(non_snake_case)]
         pub async fn #func_name #generic_tokens(#(#param_types),*) -> #return_type_tokens {
-            const MODULE: Asset = asset!(#asset_path);
-            const #js_func_name_ident: &str = #js_func_name;
+            const #func_name_static_ident: &str = #func_name_str;
             #js_in_comment
-            #js_string
-            let mut eval = dioxus::document::eval(js.as_str());
+            #js_eval_statement
             #(#send_calls)*
             #callback_spawn
             #end_statement
         }
+    }
+}
+
+fn return_type_tokens(
+    return_type: &RustType,
+    span: Option<proc_macro2::Span>,
+) -> (proc_macro2::TokenStream, Option<proc_macro2::TokenStream>) {
+    let span = span.unwrap_or_else(|| proc_macro2::Span::call_site());
+    let parsed_type = return_type.to_tokens();
+    if return_type.to_string() == DEFAULT_GENERIC_OUTPUT {
+        let generic = Ident::new(DEFAULT_GENERIC_OUTPUT, span);
+        let generic_decl: TypeParam = syn::parse_str(DEFAULT_OUTPUT_GENERIC_DECLARTION).unwrap();
+        (
+            quote! { Result<#generic, dioxus_use_js::JsError> },
+            Some(quote! { <#generic_decl> }),
+        )
+    } else {
+        (
+            quote! { Result<#parsed_type, dioxus_use_js::JsError> },
+            None,
+        )
     }
 }
 
@@ -1533,31 +1739,41 @@ pub fn use_js(input: TokenStream) -> TokenStream {
 
     let js_file_path = std::path::Path::new(&manifest_dir).join(js_bundle_path.value());
 
-    let (js_all_functions, _js_all_classes) = match parse_script_file(&js_file_path, true) {
+    let (js_all_functions, js_all_classes) = match parse_script_file(&js_file_path, true) {
         Ok(result) => result,
         Err(e) => return TokenStream::from(e.to_compile_error()),
     };
 
-    let js_functions_to_generate =
-        match get_functions_to_generate(js_all_functions, &import_spec, &js_file_path) {
-            Ok(funcs) => funcs,
-            Err(e) => return TokenStream::from(e.to_compile_error()),
-        };
+    let (js_classes_to_generate, js_functions_to_generate) = match get_types_to_generate(
+        js_all_classes,
+        js_all_functions,
+        &import_spec,
+        &js_file_path,
+    ) {
+        Ok((classes, funcs)) => (classes, funcs),
+        Err(e) => {
+            return TokenStream::from(e.to_compile_error());
+        }
+    };
 
-    let functions_to_generate = if let Some(ts_file_path) = ts_source_path {
+    let (functions_to_generate, classes_to_generate) = if let Some(ts_file_path) = ts_source_path {
         let ts_file_path = std::path::Path::new(&manifest_dir).join(ts_file_path.value());
-        let (ts_all_functions, _ts_all_classes) = match parse_script_file(&ts_file_path, false) {
+        let (ts_all_functions, ts_all_classes) = match parse_script_file(&ts_file_path, false) {
             Ok(result) => result,
             Err(e) => return TokenStream::from(e.to_compile_error()),
         };
 
-        let ts_functions_to_generate =
-            match get_functions_to_generate(ts_all_functions, &import_spec, &ts_file_path) {
-                Ok(funcs) => funcs,
-                Err(e) => {
-                    return TokenStream::from(e.to_compile_error());
-                }
-            };
+        let (ts_classes_to_generate, ts_functions_to_generate) = match get_types_to_generate(
+            ts_all_classes,
+            ts_all_functions,
+            &import_spec,
+            &ts_file_path,
+        ) {
+            Ok((classes, funcs)) => (classes, funcs),
+            Err(e) => {
+                return TokenStream::from(e.to_compile_error());
+            }
+        };
 
         for ts_func in ts_functions_to_generate.iter() {
             if let Some(js_func) = js_functions_to_generate
@@ -1585,10 +1801,40 @@ pub fn use_js(input: TokenStream) -> TokenStream {
                 .to_compile_error());
             }
         }
-        ts_functions_to_generate
+
+        // Validate classes match between TS and JS
+        for ts_class in ts_classes_to_generate.iter() {
+            if let Some(js_class) = js_classes_to_generate
+                .iter()
+                .find(|c| c.name == ts_class.name)
+            {
+                if ts_class.methods.len() != js_class.methods.len() {
+                    return TokenStream::from(syn::Error::new(
+                        proc_macro2::Span::call_site(),
+                        format!(
+                            "Class '{}' has different method count in JS and TS files. Bundle may be out of date",
+                            ts_class.name
+                        ),
+                    )
+                    .to_compile_error());
+                }
+            } else {
+                return TokenStream::from(syn::Error::new(
+                    proc_macro2::Span::call_site(),
+                    format!(
+                        "Class '{}' is defined in TS file but not in JS file. Bundle may be out of date",
+                        ts_class.name
+                    ),
+                )
+                .to_compile_error());
+            }
+        }
+
+        (ts_functions_to_generate, ts_classes_to_generate)
     } else {
-        js_functions_to_generate
+        (js_functions_to_generate, js_classes_to_generate)
     };
+
     for function in functions_to_generate.iter() {
         for param in function.params.iter() {
             if param.name.starts_with("_") && param.name.ends_with("_") {
@@ -1627,11 +1873,17 @@ pub fn use_js(input: TokenStream) -> TokenStream {
 
     let function_wrappers: Vec<TokenStream2> = functions_to_generate
         .iter()
-        .map(|func| generate_function_wrapper(func, &js_bundle_path, &function_id_hasher))
+        .map(|func| generate_invocation(None, func, &js_bundle_path, &function_id_hasher))
+        .collect();
+
+    let class_wrappers: Vec<TokenStream2> = classes_to_generate
+        .iter()
+        .map(|class| generate_class_wrapper(class, &js_bundle_path, &function_id_hasher))
         .collect();
 
     let expanded = quote! {
         #(#function_wrappers)*
+        #(#class_wrappers)*
     };
 
     TokenStream::from(expanded)
