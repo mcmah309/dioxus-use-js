@@ -1,7 +1,4 @@
-use dioxus::{
-    logger::tracing::Level,
-    prelude::*,
-};
+use dioxus::{logger::tracing::Level, prelude::*};
 use dioxus_use_js::{JsError, use_js};
 
 use crate::dropping_component::Dropping;
@@ -164,9 +161,8 @@ fn App() -> Element {
     let counter: Resource<Result<Counter, JsError>> =
         use_resource(|| async move { Ok(Counter::new(Counter::createDefault().await?)) });
 
-    let counter_instance_example: Resource<Result<f64, JsError>> = use_resource({
-        let counter = counter.clone();
-        move || async move {
+    let counter_instance_example: Resource<Result<f64, JsError>> =
+        use_resource(move || async move {
             let counter_read = counter.read();
             if counter_read.is_none() {
                 drop(counter_read);
@@ -180,8 +176,7 @@ fn App() -> Element {
             counter.doubleAsync().await?;
             let final_count = counter.increment(2.0).await?;
             Ok(final_count)
-        }
-    });
+        });
 
     let counter_static_example: Resource<Result<f64, JsError>> = use_resource(|| async move {
         let result = Counter::add(5.0, 10.0).await?;
