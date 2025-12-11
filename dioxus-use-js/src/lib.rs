@@ -62,7 +62,7 @@ fn _send_sync_error_assert() {
 }
 
 /// An error related to the execution of a javascript operation
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub enum JsError {
     /// Error occurred during dioxus evalution.
     /// If this occurs, it usually mean your js is not valid or the wrong type was returned from
@@ -70,7 +70,7 @@ pub enum JsError {
     Eval {
         /// The name of the js function
         func: &'static str,
-        error: dioxus::document::EvalError,
+        error: Arc<dioxus::document::EvalError>,
     },
     /// A js function that threw a value during execution. The actual error value is logged on the js side as a warning.
     Threw {
@@ -115,13 +115,13 @@ impl std::error::Error for JsError {}
 /// This uses `Arc` internally and the value on the js side is destroyed when the last reference is dropped
 // Dev Note: No `serde::Serialize` or `serde::Deserialize` on purpose since the value is destroyed when dropped
 #[derive(
-    serde::Serialize, serde::Deserialize, Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Hash,
+    serde::Serialize, serde::Deserialize, Clone, Debug, PartialEq, Eq, Hash,
 )]
 pub struct JsValue(Arc<JsValueInner>);
 
 /// Abstraction used to implement the one time drop
 #[derive(
-    serde::Serialize, serde::Deserialize, Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Hash,
+    serde::Serialize, serde::Deserialize, Clone, Debug, PartialEq, Eq, Hash,
 )]
 struct JsValueInner(String);
 

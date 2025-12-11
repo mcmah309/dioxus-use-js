@@ -1137,7 +1137,7 @@ fn generate_class_wrapper(
 
     quote! {
         #doc_comment
-        #[derive(Clone, Debug)]
+        #[derive(Clone, Debug, PartialEq, Eq, Hash,)]
         pub struct #class_ident(dioxus_use_js::JsValue);
 
         impl #class_ident {
@@ -1212,18 +1212,18 @@ fn generate_invocation(
             let param_name = format_ident!("{}", param.name);
             match &param.rust_type {
                 RustType::Regular(_) => Some(quote! {
-                    eval.send(#param_name).map_err(|e| dioxus_use_js::JsError::Eval { func: #func_name_static_ident, error: e })?;
+                    eval.send(#param_name).map_err(|e| dioxus_use_js::JsError::Eval { func: #func_name_static_ident, error: std::sync::Arc::new(e) })?;
                 }),
                 RustType::JsValue(js_value) => {
                     if js_value.is_option {
                         Some(quote! {
                             #[allow(deprecated)]
-                            eval.send(#param_name.map(|e| e.internal_get())).map_err(|e| dioxus_use_js::JsError::Eval { func: #func_name_static_ident, error: e })?;
+                            eval.send(#param_name.map(|e| e.internal_get())).map_err(|e| dioxus_use_js::JsError::Eval { func: #func_name_static_ident, error: std::sync::Arc::new(e) })?;
                         })
                     } else {
                         Some(quote! {
                             #[allow(deprecated)]
-                            eval.send(#param_name.internal_get()).map_err(|e| dioxus_use_js::JsError::Eval { func: #func_name_static_ident, error: e })?;
+                            eval.send(#param_name.internal_get()).map_err(|e| dioxus_use_js::JsError::Eval { func: #func_name_static_ident, error: std::sync::Arc::new(e) })?;
                         })
                     }
                 },
@@ -1500,9 +1500,9 @@ fn generate_invocation(
                 } else {
                     Err(dioxus_use_js::JsError::Eval {
                         func: #func_name_static_ident,
-                        error: dioxus::document::EvalError::Serialization(
+                        error: std::sync::Arc::new(dioxus::document::EvalError::Serialization(
                             <dioxus_use_js::SerdeJsonError as dioxus_use_js::SerdeDeError>::custom(dioxus_use_js::__BAD_VOID_RETURN.to_owned())
-                        )
+                        ))
                     })
                 }
             })
@@ -1653,7 +1653,7 @@ fn generate_invocation(
         let value = eval.await.map_err(|e| {
             dioxus_use_js::JsError::Eval {
                 func: #func_name_static_ident,
-                error: e,
+                error: std::sync::Arc::new(e),
             }
         })?;
         let dioxus_use_js::SerdeJsonValue::Array(values) = value else {
@@ -1669,7 +1669,7 @@ fn generate_invocation(
             return dioxus_use_js::serde_json_from_value(value).map_err(|e| {
                 dioxus_use_js::JsError::Eval {
                     func: #func_name_static_ident,
-                    error: dioxus::document::EvalError::Serialization(e),
+                    error: std::sync::Arc::new(dioxus::document::EvalError::Serialization(e)),
                 }
             })
             #void_output_mapping;
