@@ -1,4 +1,7 @@
-use dioxus::{logger::tracing::Level, prelude::*};
+use dioxus::{
+    logger::tracing::Level,
+    prelude::*,
+};
 use dioxus_use_js::{JsError, use_js};
 
 use crate::dropping_component::Dropping;
@@ -153,18 +156,36 @@ fn App() -> Element {
         Ok(output)
     });
 
+    let log_callback = use_callback(|message: String| async move {
+        info!("{}", message);
+        Ok(())
+    });
+
+    let counter: Resource<Result<Counter, JsError>> =
+        use_resource(|| async move { Ok(Counter::new(Counter::createDefault().await?)) });
+
+    let counter_instance_example: Resource<Result<f64, JsError>> = use_resource({
+        let counter = counter.clone();
+        move || async move {
+            let counter_read = counter.read();
+            if counter_read.is_none() {
+                drop(counter_read);
+                counter.await;
+                unreachable!("Future will cancel");
+            }
+            let counter = counter_read.clone().unwrap().unwrap();
+
+            let _initial = counter.getCount().await?;
+            counter.increment(10.0).await?;
+            counter.doubleAsync().await?;
+            let final_count = counter.increment(2.0).await?;
+            Ok(final_count)
+        }
+    });
+
     let counter_static_example: Resource<Result<f64, JsError>> = use_resource(|| async move {
         let result = Counter::add(5.0, 10.0).await?;
         Ok(result)
-    });
-
-    let counter_instance_example: Resource<Result<f64, JsError>> = use_resource(|| async move {
-        let counter = Counter::new(Counter::createDefault().await?);
-        let _initial = counter.getCount().await?;
-        counter.increment(10.0).await?;
-        counter.doubleAsync().await?;
-        let final_count = counter.increment(2.0).await?;
-        Ok(final_count)
     });
 
     rsx!(
@@ -255,6 +276,20 @@ fn App() -> Element {
                 div {
                     h3 { "Instance Methods (expected count: 22):" }
                     {example_result(&counter_instance_example.read())}
+                }
+                button {
+                    onclick: move |_| async move {
+                        let counter = counter.peek().as_ref().unwrap().clone().unwrap();
+                        counter.setLog(log_callback).await.unwrap();
+                    },
+                    "Click to pass the rust logger to the class, then check logs for log messages."
+                }
+                button {
+                    onclick: move |_| async move {
+                        let counter = counter.peek().as_ref().unwrap().clone().unwrap();
+                        counter.increment(1.0).await.unwrap();
+                    },
+                    "increment"
                 }
             }
         }

@@ -137,9 +137,11 @@ export async function dropOnly(drop: Drop): Promise<number> {
  */
 export class Counter {
     private count: number;
+    private log: RustCallback<string, void> | null;
 
     constructor(initialValue: number) {
         this.count = initialValue;
+        this.log = null;
     }
 
     /**
@@ -154,7 +156,17 @@ export class Counter {
      */
     increment(value: number): number {
         this.count += value;
+        if (this.log != null) {
+            this.log(`Incremented by ${value}`);
+        }
         return this.count;
+    }
+
+    /**
+     * If set logs every increment on the rust side
+     */
+    setLog(log: RustCallback<string, void>): void {
+        this.log = log;
     }
 
     /**
