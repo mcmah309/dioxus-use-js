@@ -94,13 +94,13 @@ export async function callback4(startingValue: number, callback: RustCallback<vo
 }
 
 export async function callback5(callback: RustCallback<Json, void>) {
-    callback([1,2]);
+    callback([1, 2]);
 }
 
 export async function callback6(callback: RustCallback<void, void>): Promise<string> {
     try {
         await callback();
-    } catch(e) {
+    } catch (e) {
         return `The number ${e} was thrown in js`;
     }
     throw new Error("Expected callback to throw an error");
@@ -137,11 +137,25 @@ export async function dropOnly(drop: Drop): Promise<number> {
  */
 export class Counter {
     private count: number;
-    private log: RustCallback<string, void> | null;
+    private log: RustCallback<string, void>;
 
     constructor(initialValue: number) {
         this.count = initialValue;
-        this.log = null;
+        this.log = async (value) => console.info(value);
+    }
+
+    /**
+     * Static factory method
+     */
+    static createDefault(): JsValue<Counter> {
+        return new Counter(0);
+    }
+
+    /**
+     * Static method to add two numbers
+     */
+    static add(a: number, b: number): number {
+        return a + b;
     }
 
     /**
@@ -156,9 +170,8 @@ export class Counter {
      */
     increment(value: number): number {
         this.count += value;
-        if (this.log != null) {
-            this.log(`Incremented by ${value}`);
-        }
+        this.log(`Incremented by ${value}`);
+        this.log(`New count is ${this.count}`);
         return this.count;
     }
 
@@ -176,20 +189,6 @@ export class Counter {
         await sleep(10);
         this.count *= 2;
         return this.count;
-    }
-
-    /**
-     * Static factory method
-     */
-    static createDefault(): JsValue<Counter> {
-        return new Counter(0);
-    }
-
-    /**
-     * Static method to add two numbers
-     */
-    static add(a: number, b: number): number {
-        return a + b;
     }
 }
 

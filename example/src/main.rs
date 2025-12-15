@@ -158,13 +158,15 @@ fn App() -> Element {
         Ok(())
     });
 
+    // Can create instance in one resource then share with others
     let counter: Resource<Result<Counter, JsError>> =
-        use_resource(|| async move { Ok(Counter::new(Counter::createDefault().await?)) });
+        use_resource(|| async move { Counter::createDefault().await });
 
     let counter_instance_example: Resource<Result<f64, JsError>> =
         use_resource(move || async move {
             let counter_read = counter.read();
             if counter_read.is_none() {
+                // todo replace when https://github.com/DioxusLabs/dioxus/pull/5088 is merged
                 drop(counter_read);
                 counter.await;
                 unreachable!("Future will cancel");
@@ -272,19 +274,22 @@ fn App() -> Element {
                     h3 { "Instance Methods (expected count: 22):" }
                     {example_result(&counter_instance_example.read())}
                 }
-                button {
-                    onclick: move |_| async move {
-                        let counter = counter.peek().as_ref().unwrap().clone().unwrap();
-                        counter.setLog(log_callback).await.unwrap();
-                    },
-                    "Click to pass the rust logger to the class, then check logs for log messages."
-                }
-                button {
-                    onclick: move |_| async move {
-                        let counter = counter.peek().as_ref().unwrap().clone().unwrap();
-                        counter.increment(1.0).await.unwrap();
-                    },
-                    "increment"
+                div {
+                    h3 { "Callbacks (Starting value is the above - `22`):" }
+                    button {
+                        onclick: move |_| async move {
+                            let counter = counter.peek().as_ref().unwrap().clone().unwrap();
+                            counter.increment(1.0).await.unwrap();
+                        },
+                        "increment (check logs)"
+                    }
+                    button {
+                        onclick: move |_| async move {
+                            let counter = counter.peek().as_ref().unwrap().clone().unwrap();
+                            counter.setLog(log_callback).await.unwrap();
+                        },
+                        "Switch the logger in the class to use `tracing::info!` instead of `console.info`"
+                    }
                 }
             }
         }

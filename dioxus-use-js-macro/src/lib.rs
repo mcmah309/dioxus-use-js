@@ -1032,19 +1032,19 @@ fn get_types_to_generate(
 }
 
 fn generate_class_wrapper(
-    class: &ClassInfo,
+    class_info: &ClassInfo,
     asset_path: &LitStr,
     function_id_hasher: &blake3::Hasher,
 ) -> TokenStream2 {
-    let class_ident = class
+    let class_ident = class_info
         .ident
         .clone()
-        .unwrap_or_else(|| Ident::new(class.name.as_str(), proc_macro2::Span::call_site()));
+        .unwrap_or_else(|| Ident::new(class_info.name.as_str(), proc_macro2::Span::call_site()));
 
-    let doc_comment = if class.doc_comment.is_empty() {
+    let doc_comment = if class_info.doc_comment.is_empty() {
         quote! {}
     } else {
-        let doc_lines: Vec<_> = class
+        let doc_lines: Vec<_> = class_info
             .doc_comment
             .iter()
             .map(|line| quote! { #[doc = #line] })
@@ -1053,7 +1053,7 @@ fn generate_class_wrapper(
     };
 
     let mut parts: Vec<TokenStream2> = Vec::new();
-    for method in &class.methods {
+    for method in &class_info.methods {
         let func_info = FunctionInfo {
             name: method.name.clone(),
             ident: None,
@@ -1067,7 +1067,7 @@ fn generate_class_wrapper(
 
         let inner_function = generate_invocation(
             Some(FunctionClassContext {
-                class_name: class.name.clone(),
+                class_name: class_info.name.clone(),
                 ident: class_ident.clone(),
                 is_static: method.is_static,
             }),
@@ -1090,10 +1090,11 @@ fn generate_class_wrapper(
             })
             .collect();
 
-        let (return_type_tokens, generic_tokens) = return_type_tokens(
-            &method.rust_return_type,
-            class.ident.as_ref().map(|e| e.span()),
-        );
+        let param_names: Vec<_> = method
+            .params
+            .iter()
+            .map(|p| format_ident!("{}", p.name))
+            .collect();
 
         let method_doc = if method.doc_comment.is_empty() {
             quote! {}
@@ -1106,28 +1107,74 @@ fn generate_class_wrapper(
             quote! { #(#doc_lines)* }
         };
 
-        let param_names: Vec<_> = method
-            .params
-            .iter()
-            .map(|p| format_ident!("{}", p.name))
-            .collect();
+        fn returns_self_type(func_info: &FunctionInfo, class_info: &ClassInfo) -> bool {
+            let Some(js_return_type) = &func_info.js_return_type else {
+                return false;
+            };
+            if !matches!(func_info.rust_return_type, RustType::JsValue(_)) {
+                return false;
+            }
+            if js_return_type.starts_with("JsValue<") && js_return_type.ends_with('>') {
+                let inner = js_return_type[8..js_return_type.len() - 1].trim();
+                if inner == class_info.name {
+                    return true;
+                }
+            }
+            return false;
+        }
+
+        let (invocation, return_type, generic) = if returns_self_type(&func_info, &class_info) {
+            // Constructs this
+            let invocation = if method.is_static {
+                quote! {
+                    Ok(#class_ident::new(#method_name(#(#param_names),*).await?))
+                }
+            } else {
+                quote! {
+                    Ok(#class_ident::new(#method_name(&self.0, #(#param_names),*).await?))
+                }
+            };
+            let (_, generic_tokens) = return_type_tokens(
+                &method.rust_return_type,
+                class_info.ident.as_ref().map(|e| e.span()),
+            );
+            let return_type_tokens = quote! { Result<#class_ident, dioxus_use_js::JsError> };
+            (invocation, return_type_tokens, generic_tokens)
+        } else {
+            let invocation = if method.is_static {
+                quote! {
+                    #method_name(#(#param_names),*).await
+                }
+            } else {
+                quote! {
+                    #method_name(&self.0, #(#param_names),*).await
+                }
+            };
+            let (return_type_tokens, generic_tokens) = return_type_tokens(
+                &method.rust_return_type,
+                class_info.ident.as_ref().map(|e| e.span()),
+            );
+            (invocation, return_type_tokens, generic_tokens)
+        };
 
         let part = if method.is_static {
             quote! {
                 #method_doc
                 #[allow(non_snake_case)]
-                pub async fn #method_name #generic_tokens(#(#method_params),*) -> #return_type_tokens {
+                pub async fn #method_name #generic(#(#method_params),*) -> #return_type {
+                    #[inline]
                     #inner_function
-                    #method_name(#(#param_names),*).await
+                    #invocation
                 }
             }
         } else {
             quote! {
                 #method_doc
                 #[allow(non_snake_case)]
-                pub async fn #method_name #generic_tokens(&self, #(#method_params),*) -> #return_type_tokens {
+                pub async fn #method_name #generic(&self, #(#method_params),*) -> #return_type {
+                    #[inline]
                     #inner_function
-                    #method_name(&self.0, #(#param_names),*).await
+                    #invocation
                 }
             }
         };
