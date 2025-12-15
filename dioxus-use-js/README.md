@@ -327,7 +327,7 @@ pub async fn dropExample(
 
 ## Classes
 
-Classes are also supported. They are build on `JsValue`. e.g.
+Classes are built on top of `JsValue` and also supported. e.g.
 
 ```ts
 /**
@@ -401,17 +401,14 @@ impl Counter {
 }
 impl Counter {
     #[doc = " Static factory method"]
-    #[allow(non_snake_case)]
     pub async fn createDefault() -> Result<Counter, dioxus_use_js::JsError> {
         unimplemented!("Removed for the example");
     }
     #[doc = " Static method to add two numbers"]
-    #[allow(non_snake_case)]
     pub async fn add(a: f64, b: f64) -> Result<f64, dioxus_use_js::JsError> {
         unimplemented!("Removed for the example");
     }
     #[doc = " Get the current count"]
-    #[allow(non_snake_case)]
     pub async fn getCount(&self) -> Result<f64, dioxus_use_js::JsError> {
         unimplemented!("Removed for the example");
     }
