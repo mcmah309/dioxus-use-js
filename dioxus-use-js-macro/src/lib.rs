@@ -804,13 +804,13 @@ impl Visit for JsVisitor {
                     .map(|e| e.atom().to_string())
                     .unwrap_or_else(|| original_name.clone());
 
+                // These are visited after the declarations so if this is exporting a function or a class, it should be findable here
                 if let Some(func) = self.functions.iter_mut().find(|f| f.name == original_name) {
                     let mut func = func.clone();
                     func.name = out_name.clone();
                     func.is_exported = true;
                     self.functions.push(func);
                 }
-
                 if let Some(class) = self.classes.iter_mut().find(|c| c.name == original_name) {
                     let mut class = class.clone();
                     class.name = out_name.clone();
@@ -974,43 +974,49 @@ fn get_types_to_generate(
         let mut resolved_class_infos = Vec::new();
         for name in names {
             let name_str = name.to_string();
+
             if let Some(pos) = all_function_infos
                 .iter()
-                .position(|f: &FunctionInfo| f.name == name_str)
+                .position(|f: &FunctionInfo| f.name == name_str && f.is_exported)
             {
                 let mut function_info = all_function_infos.remove(pos);
-                if !function_info.is_exported {
-                    return Err(syn::Error::new(
-                        proc_macro2::Span::call_site(),
-                        format!(
-                            "Function '{}' not exported in file '{}'",
-                            name,
-                            file.display()
-                        ),
-                    ));
-                }
                 function_info.ident.replace(name.clone());
                 resolved_function_infos.push(function_info);
-            } else if let Some(pos) = all_class_infos.iter().position(|c: &ClassInfo| c.name == name_str) {
+                continue;
+            }
+            if let Some(pos) = all_class_infos
+                .iter()
+                .position(|c: &ClassInfo| c.name == name_str && c.is_exported)
+            {
                 let mut class_info = all_class_infos.remove(pos);
-                if !class_info.is_exported {
-                    return Err(syn::Error::new(
-                        proc_macro2::Span::call_site(),
-                        format!("Class '{}' not exported in file '{}'", name, file.display()),
-                    ));
-                }
                 class_info.ident.replace(name.clone());
                 resolved_class_infos.push(class_info);
-            } else {
+                continue;
+            }
+            if all_function_infos.iter().any(|f| f.name == name_str) {
                 return Err(syn::Error::new(
                     proc_macro2::Span::call_site(),
                     format!(
-                        "Function or Class '{}' not found in file '{}'",
+                        "Function '{}' not exported in file '{}'",
                         name,
                         file.display()
                     ),
                 ));
             }
+            if all_class_infos.iter().any(|c| c.name == name_str) {
+                return Err(syn::Error::new(
+                    proc_macro2::Span::call_site(),
+                    format!("Class '{}' not exported in file '{}'", name, file.display()),
+                ));
+            }
+            return Err(syn::Error::new(
+                proc_macro2::Span::call_site(),
+                format!(
+                    "Function or Class '{}' not found in file '{}'",
+                    name,
+                    file.display()
+                ),
+            ));
         }
         Ok((resolved_class_infos, resolved_function_infos))
     }
