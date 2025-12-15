@@ -1,6 +1,6 @@
 [package]
 name = "dioxus-use-js-macro"
-version = "0.4.3"
+version = "0.4.4"
 authors = ["Dillon Henry McMahon"]
 edition = "2024"
 rust-version = "1.88"
