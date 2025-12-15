@@ -4,7 +4,7 @@
 [<img alt="test status" src="https://img.shields.io/github/actions/workflow/status/mcmah309/dioxus-use-js/rust.yml?branch=master&style=for-the-badge" height="20">](https://github.com/mcmah309/dioxus-use-js/actions/workflows/rust.yml)
 
 
-A macro that generates Rust bindings to JavaScript or TypeScript functions, with compile time checks. For use with [`Dioxus`](https://github.com/DioxusLabs/dioxus). No need to use [eval](https://docs.rs/dioxus-document/latest/dioxus_document/fn.eval.html) directly anymore!
+A macro that generates Rust bindings to JavaScript or TypeScript functions and classes, with compile time checks. For use with [`Dioxus`](https://github.com/DioxusLabs/dioxus). No need to use [eval](https://docs.rs/dioxus-document/latest/dioxus_document/fn.eval.html) directly anymore!
 Works across all `eval` supported platforms (**Web**, **Desktop**, **Mobile**, and **liveview**) — no `wasm-bindgen` required.
 
 ---
@@ -323,4 +323,120 @@ export async function dropExample(
 pub async fn dropExample(
     value: f64,
 ) -> Result<f64, JsError>;
+```
+
+## Classes
+
+Classes are also supported. They are build on `JsValue`. e.g.
+
+```ts
+/**
+ * Class test
+ */
+export class Counter {
+    private count: number;
+    private log: RustCallback<string, void>;
+
+    constructor(initialValue: number) {
+        this.count = initialValue;
+        this.log = async (value) => console.info(value);
+    }
+
+    /**
+     * Static factory method
+     */
+    static createDefault(): JsValue<Counter> {
+        return new Counter(0);
+    }
+
+    /**
+     * Static method to add two numbers
+     */
+    static add(a: number, b: number): number {
+        return a + b;
+    }
+
+    /**
+     * Get the current count
+     */
+    getCount(): number {
+        return this.count;
+    }
+
+    /**
+     * Increment the counter by a value
+     */
+    increment(value: number): number {
+        this.count += value;
+        this.log(`Incremented by ${value}`);
+        this.log(`New count is ${this.count}`);
+        return this.count;
+    }
+
+    /**
+     * If set logs every increment on the rust side
+     */
+    setLog(log: RustCallback<string, void>): void {
+        this.log = log;
+    }
+
+    /**
+     * Async method to double the count
+     */
+    async doubleAsync(): Promise<number> {
+        this.count *= 2;
+        return this.count;
+    }
+}
+```
+Rust
+```rust,ignore
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+pub struct Counter(dioxus_use_js::JsValue);
+
+impl Counter {
+    pub fn new(js_value: dioxus_use_js::JsValue) -> Self {
+        Self(js_value)
+    }
+}
+impl Counter {
+    #[doc = " Static factory method"]
+    #[allow(non_snake_case)]
+    pub async fn createDefault() -> Result<Counter, dioxus_use_js::JsError> {
+        unimplemented!("Removed for the example");
+    }
+    #[doc = " Static method to add two numbers"]
+    #[allow(non_snake_case)]
+    pub async fn add(a: f64, b: f64) -> Result<f64, dioxus_use_js::JsError> {
+        unimplemented!("Removed for the example");
+    }
+    #[doc = " Get the current count"]
+    #[allow(non_snake_case)]
+    pub async fn getCount(&self) -> Result<f64, dioxus_use_js::JsError> {
+        unimplemented!("Removed for the example");
+    }
+    #[doc = " Increment the counter by a value"]
+    pub async fn increment(&self, value: f64) -> Result<f64, dioxus_use_js::JsError> {
+        unimplemented!("Removed for the example");
+    }
+    #[doc = " If set logs every increment on the rust side"]
+    pub async fn setLog(
+        &self,
+        log: dioxus::core::Callback<
+            String,
+            impl Future<Output = Result<(), dioxus_use_js::SerdeJsonValue>> + 'static,
+        >,
+    ) -> Result<(), dioxus_use_js::JsError> {
+        unimplemented!("Removed for the example");
+    }
+    #[doc = " Async method to double the count"]
+    pub async fn doubleAsync(&self) -> Result<f64, dioxus_use_js::JsError> {
+        unimplemented!("Removed for the example");
+    }
+}
+impl AsRef<dioxus_use_js::JsValue> for Counter {
+    fn as_ref(&self) -> &dioxus_use_js::JsValue {
+        &self.0
+    }
+}
 ```
