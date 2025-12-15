@@ -29,7 +29,7 @@ use dioxus_use_js::use_js;
 use_js!("assets/example.js"::greeting);
 ```
 
-**Generated Rust signature**:
+**Generated Rust signature:**
 
 ```rust,ignore
 async fn greeting<T: DeserializeOwned>(from: impl Serialize, to: impl Serialize) -> Result<T, JsError>;
@@ -68,7 +68,7 @@ Bind with:
 use_js!("js-utils/example.ts", "assets/example.js"::{greeting});
 ```
 
-**Generated Rust signature**:
+**Generated Rust signature:**
 
 ```rust,ignore
 async fn greeting(from: &str, to: &str) -> Result<String, JsError>;
@@ -151,7 +151,7 @@ export function json(): Json[] {
 }
 ```
 
-**Generated Rust signature**:
+**Generated Rust signature:**
 
 ```rust,ignore
 pub async fn json() -> Result<Vec<Value> ,JsError>;
@@ -199,7 +199,7 @@ export function useJsObject(value: JsValue<MyObject>): number {
 }
 ```
 
-**Generated Rust signature**:
+**Generated Rust signature:**
 
 ```rust,ignore
 pub async fn createJsObject() -> Result<JsValue, JsError>;
@@ -271,7 +271,7 @@ export async function useCallback(
 }
 ```
 
-**Generated Rust signature**:
+**Generated Rust signature:**
 
 ```rust,ignore
 pub async fn useCallback(
@@ -317,7 +317,7 @@ export async function dropExample(
   drop: Drop
 ): Promise<number>;
 ```
-**Generated Rust signature**:
+**Generated Rust signature:**
 
 ```rust,ignore
 pub async fn dropExample(
@@ -329,6 +329,7 @@ pub async fn dropExample(
 
 Classes are built on top of `JsValue` and also supported. e.g.
 
+**TypeScript:**
 ```ts
 /**
  * Class test
@@ -389,7 +390,8 @@ export class Counter {
     }
 }
 ```
-Rust
+
+**Generated Rust**:
 ```rust,ignore
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub struct Counter(dioxus_use_js::JsValue);
