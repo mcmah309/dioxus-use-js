@@ -955,13 +955,6 @@ fn parse_script_file(file_path: &Path, is_js: bool) -> Result<(Vec<FunctionInfo>
     let mut visitor = JsVisitor::new(comments, source_map);
     module.visit_with(&mut visitor);
 
-    // Functions and classes are added twice for some reason.
-    visitor
-        .functions
-        .dedup_by(|e1, e2| e1.name.as_str() == e2.name.as_str());
-    visitor
-        .classes
-        .dedup_by(|e1, e2| e1.name.as_str() == e2.name.as_str());
     Ok((visitor.functions, visitor.classes))
 }
 
@@ -973,19 +966,19 @@ fn get_types_to_generate(
 ) -> Result<(Vec<ClassInfo>, Vec<FunctionInfo>)> {
     fn named_helper(
         names: &Vec<Ident>,
-        mut classes: Vec<ClassInfo>,
-        mut functions: Vec<FunctionInfo>,
+        mut all_class_infos: Vec<ClassInfo>,
+        mut all_function_infos: Vec<FunctionInfo>,
         file: &Path,
     ) -> Result<(Vec<ClassInfo>, Vec<FunctionInfo>)> {
-        let mut funcs = Vec::new();
-        let mut classes = Vec::new();
+        let mut resolved_function_infos = Vec::new();
+        let mut resolved_class_infos = Vec::new();
         for name in names {
             let name_str = name.to_string();
-            if let Some(pos) = functions
+            if let Some(pos) = all_function_infos
                 .iter()
                 .position(|f: &FunctionInfo| f.name == name_str)
             {
-                let mut function_info = functions.remove(pos);
+                let mut function_info = all_function_infos.remove(pos);
                 if !function_info.is_exported {
                     return Err(syn::Error::new(
                         proc_macro2::Span::call_site(),
@@ -997,9 +990,9 @@ fn get_types_to_generate(
                     ));
                 }
                 function_info.ident.replace(name.clone());
-                funcs.push(function_info);
-            } else if let Some(pos) = classes.iter().position(|c: &ClassInfo| c.name == name_str) {
-                let mut class_info = classes.remove(pos);
+                resolved_function_infos.push(function_info);
+            } else if let Some(pos) = all_class_infos.iter().position(|c: &ClassInfo| c.name == name_str) {
+                let mut class_info = all_class_infos.remove(pos);
                 if !class_info.is_exported {
                     return Err(syn::Error::new(
                         proc_macro2::Span::call_site(),
@@ -1007,7 +1000,7 @@ fn get_types_to_generate(
                     ));
                 }
                 class_info.ident.replace(name.clone());
-                classes.push(class_info);
+                resolved_class_infos.push(class_info);
             } else {
                 return Err(syn::Error::new(
                     proc_macro2::Span::call_site(),
@@ -1019,7 +1012,7 @@ fn get_types_to_generate(
                 ));
             }
         }
-        Ok((classes, funcs))
+        Ok((resolved_class_infos, resolved_function_infos))
     }
     match import_spec {
         ImportSpec::All => Ok((
