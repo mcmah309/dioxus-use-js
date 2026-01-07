@@ -289,7 +289,7 @@ let cb = use_callback(move |value: f64| async move {
 });
 let callback_example: Resource<Result<f64, JsError>> = use_resource(|| async move {
     // Pass it into the JS function
-    let value = useCallback(2.0, callback).await?;
+    let value = useCallback(2.0, cb).await?;
     Ok(value)
 });
 ```
