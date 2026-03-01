@@ -2001,8 +2001,6 @@ pub fn use_js(input: TokenStream) -> TokenStream {
                     debug_id
                 };
 
-                println!("{:?}", js_debug_id);
-
                 if js_debug_id != sourcemap.get_debug_id() {
                     return TokenStream::from(
                         syn::Error::new(
