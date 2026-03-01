@@ -22,3 +22,5 @@ swc_common = { version = "15.0.0", default-features = false }
 indexmap = "2"
 blake3="1.8"
 base64="0.22"
+sourcemap = "9.3.2"
+debugid = "0.8.0"

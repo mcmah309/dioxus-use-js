@@ -7,6 +7,7 @@ fn main() {
         .src_files(vec![PathBuf::from("js-utils/src/example.ts")])
         .output_dir(PathBuf::from("assets"))
         .skip_if_no_bun(true)
+        .extra_flags(vec!["--sourcemap=linked".into()]) // Enable sourcemap to extract types from it
         .build()
         .run();
 }

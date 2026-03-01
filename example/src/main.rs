@@ -7,9 +7,18 @@ mod dropping_component;
 
 // Use typescript to generate the following functions at compile time
 // with the correct Rust types determined from the source:
+// Warning: that this method does not detect classes or functions that were imported into the file. See the sourcemap example below if you are re-exporting types
 use_js!("js-utils/src/example.ts", "assets/example.js"::*);
 // Use pure js
 use_js!("assets/other.js"::*);
+
+// Use js with sourcemap.
+// Note: putting it in its own module is not necessary.
+// In this case it's to avoid errors due to clashing names from the previous use_js! call with this file
+mod sourcemap {
+    use dioxus::prelude::*;
+    super::use_js!("assets/example.js"::*);
+}
 
 fn main() {
     dioxus::logger::init(Level::TRACE).unwrap();
