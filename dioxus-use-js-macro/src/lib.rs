@@ -933,17 +933,27 @@ impl Visit for JsVisitor {
 }
 
 fn parse_script_file(file_path: &Path, is_js: bool) -> Result<(Vec<FunctionInfo>, Vec<ClassInfo>)> {
-    let js_content = fs::read_to_string(file_path).map_err(|e| {
+    let file_name = file_path.to_string_lossy();
+    let file_contents = fs::read_to_string(file_path).map_err(|e| {
         syn::Error::new(
             proc_macro2::Span::call_site(),
             format!("Could not read file '{}': {}", file_path.display(), e),
         )
     })?;
 
+    parse_script(file_name, &file_contents, is_js)
+}
+
+fn parse_script(
+    file_path: impl Into<String>,
+    file_contents: &str,
+    is_js: bool,
+) -> Result<(Vec<FunctionInfo>, Vec<ClassInfo>)> {
+    let file_path = file_path.into();
     let source_map = SourceMap::default();
     let fm = source_map.new_source_file(
-        swc_common::FileName::Custom(file_path.display().to_string()).into(),
-        js_content.clone(),
+        swc_common::FileName::Custom(file_path.clone()).into(),
+        file_contents.to_owned(),
     );
     let comments = SingleThreadedComments::default();
 
@@ -983,11 +993,7 @@ fn parse_script_file(file_path: &Path, is_js: bool) -> Result<(Vec<FunctionInfo>
     let module = parser.parse_module().map_err(|e| {
         syn::Error::new(
             proc_macro2::Span::call_site(),
-            format!(
-                "Failed to parse script file '{}': {:?}",
-                file_path.display(),
-                e
-            ),
+            format!("Failed to parse script file '{}': {:?}", file_path, e),
         )
     })?;
 
