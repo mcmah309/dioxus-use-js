@@ -7,6 +7,7 @@ use proc_macro::TokenStream;
 use proc_macro2::{Literal, TokenStream as TokenStream2};
 use quote::{format_ident, quote};
 use std::collections::HashMap;
+use std::io::Read;
 use std::path::PathBuf;
 use std::str::FromStr;
 use std::{fs, path::Path};
@@ -1947,8 +1948,7 @@ pub fn use_js(input: TokenStream) -> TokenStream {
                         {
                             let mut file_path =
                                 sourcemap.get_source(source_index).unwrap().to_owned();
-                            file_path
-                                .insert_str(0, &format!("<{}>://", sourcemap.get_file().unwrap()));
+                            file_path.insert_str(0, &format!("<sourcemap>://{}", file_path));
                             let file_contents =
                                 sourcemap.get_source_contents(source_index).unwrap();
 
@@ -2094,44 +2094,88 @@ pub fn use_js(input: TokenStream) -> TokenStream {
 }
 
 fn try_extract_sourcemap(js_file_path: &Path) -> Result<Option<sourcemap::SourceMap>> {
-    let sourcemap_file_path = js_file_path.with_extension("js.map");
-
-    if !sourcemap_file_path.try_exists().unwrap_or(false) {
-        return Ok(None);
+    #[derive(Debug)]
+    enum SourceMapType {
+        /// The sourcemap is inlined. The string value is the base64 encoded sourcemap value.
+        Inline(String),
+        /// The sourcemap is linked. The path value is the path to the sourcemap file. It's built based on the js file path.
+        Linked(PathBuf),
     }
 
-    let file = match std::fs::File::open(&sourcemap_file_path) {
-        Ok(f) => f,
+    fn get_source_map_type(
+        js_file_path: &Path,
+    ) -> std::result::Result<Option<SourceMapType>, std::io::Error> {
+        let contents = std::fs::read_to_string(js_file_path)?;
+
+        // Iterate lines in reverse. Sourcemap info is normally inserted at the end of the file.
+        for line in contents.lines().rev() {
+            if let Some(base64) =
+                line.strip_prefix("//# sourceMappingURL=data:application/json;base64,")
+            {
+                return Ok(Some(SourceMapType::Inline(base64.to_string())));
+            }
+
+            if let Some(url) = line.strip_prefix("//# sourceMappingURL=") {
+                return Ok(Some(SourceMapType::Linked(
+                    js_file_path.parent().unwrap().join(url),
+                )));
+            }
+        }
+
+        Ok(None)
+    }
+
+    let sourcemap_contents = match get_source_map_type(js_file_path) {
         Err(err) => {
             return Err(syn::Error::new(
                 proc_macro2::Span::call_site(),
                 format!(
-                    "Failed to open sourcemap file '{}': {}",
-                    sourcemap_file_path.display(),
+                    "Failed to extract sourcemap type from source file '{}': {}",
+                    js_file_path.display(),
                     err
                 ),
             ));
         }
+        Ok(None) => return Ok(None),
+        Ok(Some(sourcemap_type)) => match sourcemap_type {
+            SourceMapType::Inline(base64) => base64::engine::general_purpose::STANDARD
+                .decode(&base64)
+                .map(|bytes| {
+                    String::from_utf8(bytes).map_err(|_| {
+                        syn::Error::new(
+                            proc_macro2::Span::call_site(),
+                            "Decoded sourcemap is not valid utf8",
+                        )
+                    })
+                })
+                .map_err(|e| {
+                    syn::Error::new(
+                        proc_macro2::Span::call_site(),
+                        format!("Failed to decode sourcemap from base64: {}", e),
+                    )
+                })??,
+            SourceMapType::Linked(path) => std::fs::read_to_string(&path).map_err(|e| {
+                syn::Error::new(
+                    proc_macro2::Span::call_site(),
+                    format!("Failed to read sourcemap file: '{}': {}", path.display(), e),
+                )
+            })?,
+        },
     };
 
-    let mut sourcemap = match sourcemap::SourceMap::from_reader(file) {
+    let sourcemap = match sourcemap::SourceMap::from_slice(sourcemap_contents.as_bytes()) {
         Ok(s) => s,
         Err(err) => {
             return Err(syn::Error::new(
                 proc_macro2::Span::call_site(),
-                format!(
-                    "Failed to parse sourcemap file '{}': {}",
-                    sourcemap_file_path.display(),
-                    err
-                ),
+                format!("Failed to parse sourcemap: {}", err),
             ));
         }
     };
-    sourcemap.set_file(Some(sourcemap_file_path.to_string_lossy()));
 
     // Verify that the debug id in the sourcemap matches the one in the js file
     let js_debug_id = {
-        let contents = match std::fs::read_to_string(&js_file_path) {
+        let contents = match std::fs::read_to_string(js_file_path) {
             Ok(c) => c,
             Err(err) => {
                 return Err(syn::Error::new(
@@ -2169,8 +2213,7 @@ fn try_extract_sourcemap(js_file_path: &Path) -> Result<Option<sourcemap::Source
         return Err(syn::Error::new(
             proc_macro2::Span::call_site(),
             format!(
-                "Sourcemap file '{}' debug id '{:?}' does not match JS file '{}' debug id '{:?}'. It may be out of date.",
-                sourcemap_file_path.display(),
+                "Sourcemap debug id '{:?}' does not match JS file '{}' debug id '{:?}'. It may be out of date.",
                 sourcemap.get_debug_id().map(|d| d.to_string()),
                 js_file_path.display(),
                 js_debug_id
