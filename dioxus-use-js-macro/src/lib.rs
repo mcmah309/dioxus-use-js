@@ -2026,25 +2026,28 @@ pub fn use_js(input: TokenStream) -> TokenStream {
                 type Definitions = (HashMap<String, FunctionInfo>, HashMap<String, ClassInfo>);
                 let (mut ts_functions_to_generate, mut ts_classes_to_generate) =
                     (Vec::<FunctionInfo>::new(), Vec::<ClassInfo>::new());
-                let mut parsed_files = HashMap::<PathBuf, Definitions>::new();
+                let mut parsed_files = HashMap::<u32, Definitions>::new();
 
-                fn get_definitions(
-                    source_file: PathBuf,
-                    parsed_files: &mut HashMap<PathBuf, Definitions>,
-                ) -> Result<&Definitions> {
+                fn get_definitions<'a>(
+                    source_index: u32,
+                    parsed_files: &'a mut HashMap<u32, Definitions>,
+                    sourcemap: &'_ sourcemap::SourceMap,
+                ) -> Result<&'a Definitions> {
                     if let std::collections::hash_map::Entry::Vacant(entry) =
-                        parsed_files.entry(source_file.clone())
+                        parsed_files.entry(source_index)
                     {
-                        // todo: parse script from sourcemap instead of file?
-                        let definitions = match parse_script_file(entry.key(), false) {
+                        let mut file_path = sourcemap.get_source(source_index).unwrap().to_owned();
+                        file_path.insert_str(0, &format!("<{}>://", sourcemap.get_file().unwrap()));
+                        let file_contents = sourcemap.get_source_contents(source_index).unwrap();
+
+                        let definitions = match parse_script(&file_path, file_contents, false) {
                             Ok(d) => d,
                             Err(err) => {
                                 return Err(syn::Error::new(
                                     proc_macro2::Span::call_site(),
                                     format!(
-                                        "Failed to parse source file '{}': {}",
-                                        source_file.display(),
-                                        err
+                                        "Failed to parse sourcemap source contents '{}': {}",
+                                        file_path, err
                                     ),
                                 ));
                             }
@@ -2066,26 +2069,21 @@ pub fn use_js(input: TokenStream) -> TokenStream {
                         entry.insert(definitions);
                     }
 
-                    Ok(parsed_files.get(&source_file).unwrap())
+                    Ok(parsed_files.get(&source_index).unwrap())
                 }
 
-                fn get_source_file(
+                fn get_source_index(
                     sourcemap_file_path: &Path,
                     sourcemap: &sourcemap::SourceMap,
                     line: u32,
                     column: u32,
-                ) -> Option<PathBuf> {
+                ) -> Option<u32> {
                     let token = sourcemap.lookup_token(line, column)?;
-                    let source_file = token.get_source()?;
-                    let source_file = sourcemap_file_path
-                        .parent()
-                        .unwrap()
-                        .join(PathBuf::from(source_file));
-                    Some(source_file)
+                    Some(token.get_src_id())
                 }
 
                 for class in js_classes_to_generate.iter() {
-                    let Some(source_file) = get_source_file(
+                    let Some(source_index) = get_source_index(
                         &sourcemap_file_path,
                         &sourcemap,
                         class.line as u32,
@@ -2094,12 +2092,13 @@ pub fn use_js(input: TokenStream) -> TokenStream {
                         continue;
                     };
 
-                    let (_, classes) = match get_definitions(source_file, &mut parsed_files) {
-                        Ok(d) => d,
-                        Err(err) => {
-                            return TokenStream::from(err.to_compile_error());
-                        }
-                    };
+                    let (_, classes) =
+                        match get_definitions(source_index, &mut parsed_files, &sourcemap) {
+                            Ok(d) => d,
+                            Err(err) => {
+                                return TokenStream::from(err.to_compile_error());
+                            }
+                        };
 
                     if let Some(class) = classes.get(&class.name) {
                         ts_classes_to_generate.push(class.clone());
@@ -2107,7 +2106,7 @@ pub fn use_js(input: TokenStream) -> TokenStream {
                 }
 
                 for method in js_functions_to_generate.iter() {
-                    let Some(source_file) = get_source_file(
+                    let Some(source_index) = get_source_index(
                         &sourcemap_file_path,
                         &sourcemap,
                         method.line as u32,
@@ -2116,12 +2115,13 @@ pub fn use_js(input: TokenStream) -> TokenStream {
                         continue;
                     };
 
-                    let (functions, _) = match get_definitions(source_file, &mut parsed_files) {
-                        Ok(d) => d,
-                        Err(err) => {
-                            return TokenStream::from(err.to_compile_error());
-                        }
-                    };
+                    let (functions, _) =
+                        match get_definitions(source_index, &mut parsed_files, &sourcemap) {
+                            Ok(d) => d,
+                            Err(err) => {
+                                return TokenStream::from(err.to_compile_error());
+                            }
+                        };
 
                     if let Some(function) = functions.get(&method.name) {
                         ts_functions_to_generate.push(function.clone());
