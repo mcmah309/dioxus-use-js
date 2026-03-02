@@ -1928,207 +1928,113 @@ pub fn use_js(input: TokenStream) -> TokenStream {
         }
         None => {
             // Try to extract types from sourcemap
-            let sourcemap_file_path = js_file_path.with_extension("js.map");
+            match try_extract_sourcemap(&js_file_path) {
+                Ok(None) => (js_functions_to_generate, js_classes_to_generate),
+                Err(err) => return TokenStream::from(err.to_compile_error()),
+                Ok(Some(sourcemap)) => {
+                    type Definitions = (HashMap<String, FunctionInfo>, HashMap<String, ClassInfo>);
+                    let (mut ts_functions_to_generate, mut ts_classes_to_generate) =
+                        (Vec::<FunctionInfo>::new(), Vec::<ClassInfo>::new());
+                    let mut parsed_files = HashMap::<u32, Definitions>::new();
 
-            if !sourcemap_file_path.try_exists().unwrap_or(false) {
-                (js_functions_to_generate, js_classes_to_generate)
-            } else {
-                let file = match std::fs::File::open(&sourcemap_file_path) {
-                    Ok(f) => f,
-                    Err(err) => {
-                        return TokenStream::from(
-                            syn::Error::new(
-                                proc_macro2::Span::call_site(),
-                                format!(
-                                    "Failed to open sourcemap file '{}': {}",
-                                    sourcemap_file_path.display(),
-                                    err
-                                ),
-                            )
-                            .to_compile_error(),
-                        );
-                    }
-                };
+                    fn get_definitions<'a>(
+                        source_index: u32,
+                        parsed_files: &'a mut HashMap<u32, Definitions>,
+                        sourcemap: &'_ sourcemap::SourceMap,
+                    ) -> Result<&'a Definitions> {
+                        if let std::collections::hash_map::Entry::Vacant(entry) =
+                            parsed_files.entry(source_index)
+                        {
+                            let mut file_path =
+                                sourcemap.get_source(source_index).unwrap().to_owned();
+                            file_path
+                                .insert_str(0, &format!("<{}>://", sourcemap.get_file().unwrap()));
+                            let file_contents =
+                                sourcemap.get_source_contents(source_index).unwrap();
 
-                let mut sourcemap = match sourcemap::SourceMap::from_reader(file) {
-                    Ok(s) => s,
-                    Err(err) => {
-                        return TokenStream::from(
-                            syn::Error::new(
-                                proc_macro2::Span::call_site(),
-                                format!(
-                                    "Failed to parse sourcemap file '{}': {}",
-                                    sourcemap_file_path.display(),
-                                    err
-                                ),
-                            )
-                            .to_compile_error(),
-                        );
-                    }
-                };
-                sourcemap.set_file(Some(sourcemap_file_path.to_string_lossy()));
+                            let definitions = match parse_script(&file_path, file_contents, false) {
+                                Ok(d) => d,
+                                Err(err) => {
+                                    return Err(syn::Error::new(
+                                        proc_macro2::Span::call_site(),
+                                        format!(
+                                            "Failed to parse sourcemap source contents '{}': {}",
+                                            file_path, err
+                                        ),
+                                    ));
+                                }
+                            };
 
-                // Verify that the debug id in the sourcemap matches the one in the js file
-                let js_debug_id = {
-                    let contents = match std::fs::read_to_string(&js_file_path) {
-                        Ok(c) => c,
-                        Err(err) => {
-                            return TokenStream::from(
-                                syn::Error::new(
-                                    proc_macro2::Span::call_site(),
-                                    format!(
-                                        "Failed to read js file '{}': {}",
-                                        js_file_path.display(),
-                                        err
-                                    ),
-                                )
-                                .to_compile_error(),
+                            let definitions = (
+                                definitions
+                                    .0
+                                    .into_iter()
+                                    .map(|f| (f.name.clone(), f))
+                                    .collect(),
+                                definitions
+                                    .1
+                                    .into_iter()
+                                    .map(|c| (c.name.clone(), c))
+                                    .collect(),
                             );
-                        }
-                    };
 
-                    let mut debug_id = None;
-
-                    for line in contents.lines().rev() {
-                        if let Some(id) = line.strip_prefix("//# debugId=") {
-                            if let Ok(id) = debugid::DebugId::from_str(id) {
-                                debug_id = Some(id);
-                            }
-
-                            break;
+                            entry.insert(definitions);
                         }
 
-                        // Break early if we're past the sourcemap comments at the end of the file
-                        if !line.is_empty() && !line.starts_with("//") {
-                            break;
+                        Ok(parsed_files.get(&source_index).unwrap())
+                    }
+
+                    fn get_source_index(
+                        sourcemap: &sourcemap::SourceMap,
+                        line: u32,
+                        column: u32,
+                    ) -> Option<u32> {
+                        let token = sourcemap.lookup_token(line, column)?;
+                        Some(token.get_src_id())
+                    }
+
+                    for class in js_classes_to_generate.iter() {
+                        let Some(source_index) =
+                            get_source_index(&sourcemap, class.line as u32, class.column as u32)
+                        else {
+                            continue;
+                        };
+
+                        let (_, classes) =
+                            match get_definitions(source_index, &mut parsed_files, &sourcemap) {
+                                Ok(d) => d,
+                                Err(err) => {
+                                    return TokenStream::from(err.to_compile_error());
+                                }
+                            };
+
+                        if let Some(class) = classes.get(&class.name) {
+                            ts_classes_to_generate.push(class.clone());
                         }
                     }
 
-                    debug_id
-                };
-
-                if js_debug_id != sourcemap.get_debug_id() {
-                    return TokenStream::from(
-                        syn::Error::new(
-                            proc_macro2::Span::call_site(),
-                            format!(
-                                "Sourcemap file '{}' debug id '{:?}' does not match JS file '{}' debug id '{:?}'. It may be out of date.",
-                                sourcemap_file_path.display(),
-                                sourcemap.get_debug_id().map(|d| d.to_string()),
-                                js_file_path.display(),
-                                js_debug_id
-                            ),
-                        )
-                        .to_compile_error(),
-                    );
-                }
-
-                type Definitions = (HashMap<String, FunctionInfo>, HashMap<String, ClassInfo>);
-                let (mut ts_functions_to_generate, mut ts_classes_to_generate) =
-                    (Vec::<FunctionInfo>::new(), Vec::<ClassInfo>::new());
-                let mut parsed_files = HashMap::<u32, Definitions>::new();
-
-                fn get_definitions<'a>(
-                    source_index: u32,
-                    parsed_files: &'a mut HashMap<u32, Definitions>,
-                    sourcemap: &'_ sourcemap::SourceMap,
-                ) -> Result<&'a Definitions> {
-                    if let std::collections::hash_map::Entry::Vacant(entry) =
-                        parsed_files.entry(source_index)
-                    {
-                        let mut file_path = sourcemap.get_source(source_index).unwrap().to_owned();
-                        file_path.insert_str(0, &format!("<{}>://", sourcemap.get_file().unwrap()));
-                        let file_contents = sourcemap.get_source_contents(source_index).unwrap();
-
-                        let definitions = match parse_script(&file_path, file_contents, false) {
-                            Ok(d) => d,
-                            Err(err) => {
-                                return Err(syn::Error::new(
-                                    proc_macro2::Span::call_site(),
-                                    format!(
-                                        "Failed to parse sourcemap source contents '{}': {}",
-                                        file_path, err
-                                    ),
-                                ));
-                            }
+                    for method in js_functions_to_generate.iter() {
+                        let Some(source_index) =
+                            get_source_index(&sourcemap, method.line as u32, method.column as u32)
+                        else {
+                            continue;
                         };
 
-                        let definitions = (
-                            definitions
-                                .0
-                                .into_iter()
-                                .map(|f| (f.name.clone(), f))
-                                .collect(),
-                            definitions
-                                .1
-                                .into_iter()
-                                .map(|c| (c.name.clone(), c))
-                                .collect(),
-                        );
+                        let (functions, _) =
+                            match get_definitions(source_index, &mut parsed_files, &sourcemap) {
+                                Ok(d) => d,
+                                Err(err) => {
+                                    return TokenStream::from(err.to_compile_error());
+                                }
+                            };
 
-                        entry.insert(definitions);
+                        if let Some(function) = functions.get(&method.name) {
+                            ts_functions_to_generate.push(function.clone());
+                        }
                     }
 
-                    Ok(parsed_files.get(&source_index).unwrap())
+                    (ts_functions_to_generate, ts_classes_to_generate)
                 }
-
-                fn get_source_index(
-                    sourcemap_file_path: &Path,
-                    sourcemap: &sourcemap::SourceMap,
-                    line: u32,
-                    column: u32,
-                ) -> Option<u32> {
-                    let token = sourcemap.lookup_token(line, column)?;
-                    Some(token.get_src_id())
-                }
-
-                for class in js_classes_to_generate.iter() {
-                    let Some(source_index) = get_source_index(
-                        &sourcemap_file_path,
-                        &sourcemap,
-                        class.line as u32,
-                        class.column as u32,
-                    ) else {
-                        continue;
-                    };
-
-                    let (_, classes) =
-                        match get_definitions(source_index, &mut parsed_files, &sourcemap) {
-                            Ok(d) => d,
-                            Err(err) => {
-                                return TokenStream::from(err.to_compile_error());
-                            }
-                        };
-
-                    if let Some(class) = classes.get(&class.name) {
-                        ts_classes_to_generate.push(class.clone());
-                    }
-                }
-
-                for method in js_functions_to_generate.iter() {
-                    let Some(source_index) = get_source_index(
-                        &sourcemap_file_path,
-                        &sourcemap,
-                        method.line as u32,
-                        method.column as u32,
-                    ) else {
-                        continue;
-                    };
-
-                    let (functions, _) =
-                        match get_definitions(source_index, &mut parsed_files, &sourcemap) {
-                            Ok(d) => d,
-                            Err(err) => {
-                                return TokenStream::from(err.to_compile_error());
-                            }
-                        };
-
-                    if let Some(function) = functions.get(&method.name) {
-                        ts_functions_to_generate.push(function.clone());
-                    }
-                }
-
-                (ts_functions_to_generate, ts_classes_to_generate)
             }
         }
     };
@@ -2185,6 +2091,94 @@ pub fn use_js(input: TokenStream) -> TokenStream {
     };
 
     TokenStream::from(expanded)
+}
+
+fn try_extract_sourcemap(js_file_path: &Path) -> Result<Option<sourcemap::SourceMap>> {
+    let sourcemap_file_path = js_file_path.with_extension("js.map");
+
+    if !sourcemap_file_path.try_exists().unwrap_or(false) {
+        return Ok(None);
+    }
+
+    let file = match std::fs::File::open(&sourcemap_file_path) {
+        Ok(f) => f,
+        Err(err) => {
+            return Err(syn::Error::new(
+                proc_macro2::Span::call_site(),
+                format!(
+                    "Failed to open sourcemap file '{}': {}",
+                    sourcemap_file_path.display(),
+                    err
+                ),
+            ));
+        }
+    };
+
+    let mut sourcemap = match sourcemap::SourceMap::from_reader(file) {
+        Ok(s) => s,
+        Err(err) => {
+            return Err(syn::Error::new(
+                proc_macro2::Span::call_site(),
+                format!(
+                    "Failed to parse sourcemap file '{}': {}",
+                    sourcemap_file_path.display(),
+                    err
+                ),
+            ));
+        }
+    };
+    sourcemap.set_file(Some(sourcemap_file_path.to_string_lossy()));
+
+    // Verify that the debug id in the sourcemap matches the one in the js file
+    let js_debug_id = {
+        let contents = match std::fs::read_to_string(&js_file_path) {
+            Ok(c) => c,
+            Err(err) => {
+                return Err(syn::Error::new(
+                    proc_macro2::Span::call_site(),
+                    format!(
+                        "Failed to read js file '{}': {}",
+                        js_file_path.display(),
+                        err
+                    ),
+                ));
+            }
+        };
+
+        let mut debug_id = None;
+
+        for line in contents.lines().rev() {
+            if let Some(id) = line.strip_prefix("//# debugId=") {
+                if let Ok(id) = debugid::DebugId::from_str(id) {
+                    debug_id = Some(id);
+                }
+
+                break;
+            }
+
+            // Break early if we're past the sourcemap comments at the end of the file
+            if !line.is_empty() && !line.starts_with("//") {
+                break;
+            }
+        }
+
+        debug_id
+    };
+
+    if js_debug_id != sourcemap.get_debug_id() {
+        return Err(syn::Error::new(
+            proc_macro2::Span::call_site(),
+            format!(
+                "Sourcemap file '{}' debug id '{:?}' does not match JS file '{}' debug id '{:?}'. It may be out of date.",
+                sourcemap_file_path.display(),
+                sourcemap.get_debug_id().map(|d| d.to_string()),
+                js_file_path.display(),
+                js_debug_id
+            ),
+        ));
+    }
+
+    Ok(Some(sourcemap))
 }
 
 //************************************************************************//
