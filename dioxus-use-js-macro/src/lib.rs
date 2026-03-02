@@ -7,7 +7,6 @@ use proc_macro::TokenStream;
 use proc_macro2::{Literal, TokenStream as TokenStream2};
 use quote::{format_ident, quote};
 use std::collections::HashMap;
-use std::io::Read;
 use std::path::PathBuf;
 use std::str::FromStr;
 use std::{fs, path::Path};
@@ -2105,7 +2104,7 @@ fn try_extract_sourcemap(js_file_path: &Path) -> Result<Option<sourcemap::Source
     fn get_source_map_type(
         js_file_path: &Path,
     ) -> std::result::Result<Option<SourceMapType>, std::io::Error> {
-        let contents = std::fs::read_to_string(js_file_path)?;
+        let contents = fs::read_to_string(js_file_path)?;
 
         // Iterate lines in reverse. Sourcemap info is normally inserted at the end of the file.
         for line in contents.lines().rev() {
@@ -2154,7 +2153,7 @@ fn try_extract_sourcemap(js_file_path: &Path) -> Result<Option<sourcemap::Source
                         format!("Failed to decode sourcemap from base64: {}", e),
                     )
                 })??,
-            SourceMapType::Linked(path) => std::fs::read_to_string(&path).map_err(|e| {
+            SourceMapType::Linked(path) => fs::read_to_string(&path).map_err(|e| {
                 syn::Error::new(
                     proc_macro2::Span::call_site(),
                     format!("Failed to read sourcemap file: '{}': {}", path.display(), e),
@@ -2175,7 +2174,7 @@ fn try_extract_sourcemap(js_file_path: &Path) -> Result<Option<sourcemap::Source
 
     // Verify that the debug id in the sourcemap matches the one in the js file
     let js_debug_id = {
-        let contents = match std::fs::read_to_string(js_file_path) {
+        let contents = match fs::read_to_string(js_file_path) {
             Ok(c) => c,
             Err(err) => {
                 return Err(syn::Error::new(
