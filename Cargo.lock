@@ -1389,7 +1389,7 @@ dependencies = [
 
 [[package]]
 name = "dioxus-use-js"
-version = "0.4.6"
+version = "0.4.7"
 dependencies = [
  "bon",
  "dioxus",
@@ -1400,7 +1400,7 @@ dependencies = [
 
 [[package]]
 name = "dioxus-use-js-macro"
-version = "0.4.6"
+version = "0.4.7"
 dependencies = [
  "base64",
  "blake3",
