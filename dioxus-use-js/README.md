@@ -68,6 +68,12 @@ Bind with:
 use_js!("js-utils/example.ts", "assets/example.js"::{greeting});
 ```
 
+Or if an inline or linked sourcemap is used. This will automatically detect it and resolve the types the same way as above
+
+```rust,ignore
+use_js!("assets/example.js"::{greeting});
+```
+
 **Generated Rust signature:**
 
 ```rust,ignore
@@ -78,7 +84,7 @@ async fn greeting(from: &str, to: &str) -> Result<String, JsError>;
 
 ## Macro Syntax
 
-### Js
+### Js or Inline/Linked SourceMap
 
 ```rust,ignore
 use_js!("bundle.js"::function);
@@ -86,7 +92,7 @@ use_js!("bundle.js"::{func1, func2});
 use_js!("bundle.js"::*);
 ```
 
-### Ts
+### Explicit Ts
 
 ```rust,ignore
 use_js!("source.ts", "bundle.js"::function);
