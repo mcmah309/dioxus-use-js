@@ -1,3 +1,5 @@
+export { createJsObjectPromiseNullable, useJsObjectNullable } from "./exports";
+
 /// This is a reserved marker type that tells the `use_js!` macro to not do serialization and
 /// deserialization, but instead create a shim and return an opaque proxy object that can be used to
 /// reference the internal js object, so it can be passed around on the rust side. 
@@ -47,15 +49,6 @@ export function useJsObject(input: number, value: JsValue<MyObject>): number {
 
 export async function createJsObjectPromise(): Promise<JsValue<MyObject>> {
     return Promise.resolve(createJsObject());
-}
-
-export async function createJsObjectPromiseNullable(): Promise<(JsValue<MyObject> | null)> {
-    return Promise.resolve(null);
-}
-
-export function useJsObjectNullable(input: number, value: JsValue<MyObject> | null): number | null {
-    let result = value?.method(input) ?? null;
-    return result;
 }
 
 export async function callback1(startingValue: number, callback: RustCallback<number, number>): Promise<number> {
