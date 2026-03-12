@@ -1,9 +1,8 @@
-export class ExportedClass {
-  public test(): number {
-    return 1;
-  }
+export async function createJsObjectPromiseNullable(): Promise<(JsValue<MyObject> | null)> {
+    return Promise.resolve(null);
 }
 
-export function exportedFunction(): number {
-  return 1;
+export function useJsObjectNullable(input: number, value: JsValue<MyObject> | null): number | null {
+    let result = value?.method(input) ?? null;
+    return result;
 }

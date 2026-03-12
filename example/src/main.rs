@@ -7,9 +7,25 @@ mod dropping_component;
 
 // Use typescript to generate the following functions at compile time
 // with the correct Rust types determined from the source:
-// Warning: that this method does not detect classes or functions that were imported into the file. See the sourcemap example below if you are re-exporting types
-use_js!("js-utils/src/example.ts", "assets/example.js"::*);
-// Use pure js
+use_js!("js-utils/src/example.ts", "assets/example.js"::{
+    greeting,
+    throws,
+    createJsObject,
+    useJsObject,
+    createJsObjectPromise,
+    sleep,
+    callback1,
+    callback2,
+    callback3,
+    callback4,
+    callback5,
+    callback6,
+    Counter
+});
+// Since we are generating source maps through bun, we don't have to specify the typescript source file
+// it will automatically look for a linked source map to determine the types
+use_js!("assets/example.js"::{ createJsObjectPromiseNullable, useJsObjectNullable });
+// Use pure js, no source additional type introspection used
 use_js!("assets/other.js"::*);
 
 // Use js with sourcemap.

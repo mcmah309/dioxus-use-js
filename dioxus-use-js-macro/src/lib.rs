@@ -7,6 +7,7 @@ use proc_macro::TokenStream;
 use proc_macro2::{Literal, TokenStream as TokenStream2};
 use quote::{format_ident, quote};
 use std::collections::HashMap;
+use std::collections::hash_map::Entry;
 use std::path::PathBuf;
 use std::str::FromStr;
 use std::{fs, path::Path};
@@ -56,6 +57,11 @@ struct UseJsInput {
     js_bundle_path: LitStr,
     ts_source_path: Option<LitStr>,
     import_spec: ImportSpec,
+}
+
+struct ExtractedData {
+    functions: Vec<FunctionInfo>,
+    classes: Vec<ClassInfo>,
 }
 
 impl Parse for UseJsInput {
@@ -944,6 +950,7 @@ fn parse_script_file(file_path: &Path, is_js: bool) -> Result<(Vec<FunctionInfo>
     parse_script(file_name, &file_contents, is_js)
 }
 
+/// Extracts function and class info from the js or ts file
 fn parse_script(
     file_path: impl Into<String>,
     file_contents: &str,
@@ -1008,51 +1015,52 @@ fn get_types_to_generate(
     functions: Vec<FunctionInfo>,
     import_spec: &ImportSpec,
     file: &Path,
-) -> Result<(Vec<ClassInfo>, Vec<FunctionInfo>)> {
+) -> Result<ExtractedData> {
     fn named_helper(
-        names: &Vec<Ident>,
+        import_spec_names: &Vec<Ident>,
         mut all_class_infos: Vec<ClassInfo>,
         mut all_function_infos: Vec<FunctionInfo>,
         file: &Path,
-    ) -> Result<(Vec<ClassInfo>, Vec<FunctionInfo>)> {
+    ) -> Result<ExtractedData> {
         let mut resolved_function_infos = Vec::new();
         let mut resolved_class_infos = Vec::new();
-        for name in names {
+        // Replace add source tokens to relate back to macro definition
+        for name in import_spec_names {
             let name_str = name.to_string();
 
             if let Some(pos) = all_function_infos
                 .iter()
-                .position(|f: &FunctionInfo| f.name == name_str && f.is_exported)
+                .position(|f: &FunctionInfo| f.name == name_str)
             {
                 let mut function_info = all_function_infos.remove(pos);
+                if !function_info.is_exported {
+                    return Err(syn::Error::new(
+                        proc_macro2::Span::call_site(),
+                        format!(
+                            "Function '{}' not exported in file '{}'",
+                            name,
+                            file.display()
+                        ),
+                    ));
+                }
                 function_info.ident.replace(name.clone());
                 resolved_function_infos.push(function_info);
                 continue;
             }
             if let Some(pos) = all_class_infos
                 .iter()
-                .position(|c: &ClassInfo| c.name == name_str && c.is_exported)
+                .position(|c: &ClassInfo| c.name == name_str)
             {
                 let mut class_info = all_class_infos.remove(pos);
+                if !class_info.is_exported {
+                    return Err(syn::Error::new(
+                        proc_macro2::Span::call_site(),
+                        format!("Class '{}' not exported in file '{}'", name, file.display()),
+                    ));
+                }
                 class_info.ident.replace(name.clone());
                 resolved_class_infos.push(class_info);
                 continue;
-            }
-            if all_function_infos.iter().any(|f| f.name == name_str) {
-                return Err(syn::Error::new(
-                    proc_macro2::Span::call_site(),
-                    format!(
-                        "Function '{}' not exported in file '{}'",
-                        name,
-                        file.display()
-                    ),
-                ));
-            }
-            if all_class_infos.iter().any(|c| c.name == name_str) {
-                return Err(syn::Error::new(
-                    proc_macro2::Span::call_site(),
-                    format!("Class '{}' not exported in file '{}'", name, file.display()),
-                ));
             }
             return Err(syn::Error::new(
                 proc_macro2::Span::call_site(),
@@ -1063,13 +1071,16 @@ fn get_types_to_generate(
                 ),
             ));
         }
-        Ok((resolved_class_infos, resolved_function_infos))
+        Ok(ExtractedData {
+            classes: resolved_class_infos,
+            functions: resolved_function_infos,
+        })
     }
     match import_spec {
-        ImportSpec::All => Ok((
-            classes.into_iter().filter(|e| e.is_exported).collect(),
-            functions.into_iter().filter(|e| e.is_exported).collect(),
-        )),
+        ImportSpec::All => Ok(ExtractedData {
+            classes: classes.into_iter().filter(|e| e.is_exported).collect(),
+            functions: functions.into_iter().filter(|e| e.is_exported).collect(),
+        }),
         ImportSpec::Single(name) => named_helper(&vec![name.clone()], classes, functions, file),
         ImportSpec::Named(names) => named_helper(names, classes, functions, file),
     }
@@ -1837,40 +1848,41 @@ pub fn use_js(input: TokenStream) -> TokenStream {
         Err(e) => return TokenStream::from(e.to_compile_error()),
     };
 
-    let (js_classes_to_generate, js_functions_to_generate) = match get_types_to_generate(
+    let js_extracted_data = match get_types_to_generate(
         js_all_classes,
         js_all_functions,
         &import_spec,
         &js_file_path,
     ) {
-        Ok((classes, funcs)) => (classes, funcs),
+        Ok(extracted_data) => extracted_data,
         Err(e) => {
             return TokenStream::from(e.to_compile_error());
         }
     };
 
-    let (functions_to_generate, classes_to_generate) = match ts_source_path {
-        Some(ts_file_path) => {
-            let ts_file_path = std::path::Path::new(&manifest_dir).join(ts_file_path.value());
+    let extracted_data = match ts_source_path {
+        Some(ts_source_path) => {
+            let ts_file_path = Path::new(&manifest_dir).join(ts_source_path.value());
             let (ts_all_functions, ts_all_classes) = match parse_script_file(&ts_file_path, false) {
                 Ok(result) => result,
                 Err(e) => return TokenStream::from(e.to_compile_error()),
             };
 
-            let (ts_classes_to_generate, ts_functions_to_generate) = match get_types_to_generate(
+            let ts_extracted_data = match get_types_to_generate(
                 ts_all_classes,
                 ts_all_functions,
                 &import_spec,
                 &ts_file_path,
             ) {
-                Ok((classes, funcs)) => (classes, funcs),
+                Ok(extracted_data) => extracted_data,
                 Err(e) => {
                     return TokenStream::from(e.to_compile_error());
                 }
             };
 
-            for ts_func in ts_functions_to_generate.iter() {
-                if let Some(js_func) = js_functions_to_generate
+            for ts_func in ts_extracted_data.functions.iter() {
+                if let Some(js_func) = js_extracted_data
+                    .functions
                     .iter()
                     .find(|f| f.name == ts_func.name)
                 {
@@ -1897,8 +1909,9 @@ pub fn use_js(input: TokenStream) -> TokenStream {
             }
 
             // Validate classes match between TS and JS
-            for ts_class in ts_classes_to_generate.iter() {
-                if let Some(js_class) = js_classes_to_generate
+            for ts_class in ts_extracted_data.classes.iter() {
+                if let Some(js_class) = js_extracted_data
+                    .classes
                     .iter()
                     .find(|c| c.name == ts_class.name)
                 {
@@ -1924,27 +1937,27 @@ pub fn use_js(input: TokenStream) -> TokenStream {
                 }
             }
 
-            (ts_functions_to_generate, ts_classes_to_generate)
+            ts_extracted_data
         }
         None => {
-            // Try to extract types from sourcemap
+            // Try to extract types from a sourcemap if a `.ts` source file is not provided
             match try_extract_sourcemap(&js_file_path) {
-                Ok(None) => (js_functions_to_generate, js_classes_to_generate),
+                Ok(None) => js_extracted_data,
                 Err(err) => return TokenStream::from(err.to_compile_error()),
                 Ok(Some(sourcemap)) => {
                     type Definitions = (HashMap<String, FunctionInfo>, HashMap<String, ClassInfo>);
                     let (mut ts_functions_to_generate, mut ts_classes_to_generate) =
                         (Vec::<FunctionInfo>::new(), Vec::<ClassInfo>::new());
                     let mut parsed_files = HashMap::<u32, Definitions>::new();
-
+                    /// Find the source file from the sourcemap and extract the definitions. The results of the extraction
+                    /// are cached in `parsed_files` so the same file is not processed more than once
                     fn get_definitions<'a>(
                         source_index: u32,
                         parsed_files: &'a mut HashMap<u32, Definitions>,
                         sourcemap: &'_ sourcemap::SourceMap,
+                        import_spec: &ImportSpec,
                     ) -> Result<&'a Definitions> {
-                        if let std::collections::hash_map::Entry::Vacant(entry) =
-                            parsed_files.entry(source_index)
-                        {
+                        if let Entry::Vacant(entry) = parsed_files.entry(source_index) {
                             let mut file_path =
                                 sourcemap.get_source(source_index).unwrap().to_owned();
                             file_path.insert_str(0, &format!("<sourcemap>://{}", file_path));
@@ -1963,17 +1976,46 @@ pub fn use_js(input: TokenStream) -> TokenStream {
                                     ));
                                 }
                             };
-
+                            fn replace_correct_import_spec_ident(
+                                import_spec: &ImportSpec,
+                                name: &str,
+                                ident: &mut Option<Ident>,
+                            ) {
+                                debug_assert!(ident.is_none());
+                                match import_spec {
+                                    ImportSpec::All => {}
+                                    ImportSpec::Named(named) => {
+                                        if let Some(found) =
+                                            named.iter().find(|e| &*e.to_string() == name)
+                                        {
+                                            ident.replace(found.clone());
+                                        }
+                                    }
+                                    ImportSpec::Single(single) => {
+                                        if &*single.to_string() == name {
+                                            ident.replace(single.clone());
+                                        }
+                                    }
+                                }
+                            }
                             let definitions = (
                                 definitions
                                     .0
                                     .into_iter()
-                                    .map(|f| (f.name.clone(), f))
+                                    .map(|mut f| {
+                                        let FunctionInfo { name, ident, .. } = &mut f;
+                                        replace_correct_import_spec_ident(import_spec, name, ident);
+                                        (f.name.clone(), f)
+                                    })
                                     .collect(),
                                 definitions
                                     .1
                                     .into_iter()
-                                    .map(|c| (c.name.clone(), c))
+                                    .map(|mut c| {
+                                        let ClassInfo { name, ident, .. } = &mut c;
+                                        replace_correct_import_spec_ident(import_spec, name, ident);
+                                        (c.name.clone(), c)
+                                    })
                                     .collect(),
                             );
 
@@ -1992,53 +2034,64 @@ pub fn use_js(input: TokenStream) -> TokenStream {
                         Some(token.get_src_id())
                     }
 
-                    for class in js_classes_to_generate.iter() {
+                    for class in js_extracted_data.classes.iter() {
                         let Some(source_index) =
                             get_source_index(&sourcemap, class.line as u32, class.column as u32)
                         else {
                             continue;
                         };
 
-                        let (_, classes) =
-                            match get_definitions(source_index, &mut parsed_files, &sourcemap) {
-                                Ok(d) => d,
-                                Err(err) => {
-                                    return TokenStream::from(err.to_compile_error());
-                                }
-                            };
+                        let (_, classes) = match get_definitions(
+                            source_index,
+                            &mut parsed_files,
+                            &sourcemap,
+                            &import_spec,
+                        ) {
+                            Ok(d) => d,
+                            Err(err) => {
+                                return TokenStream::from(err.to_compile_error());
+                            }
+                        };
 
                         if let Some(class) = classes.get(&class.name) {
                             ts_classes_to_generate.push(class.clone());
                         }
                     }
 
-                    for method in js_functions_to_generate.iter() {
+                    for method in js_extracted_data.functions.iter() {
                         let Some(source_index) =
                             get_source_index(&sourcemap, method.line as u32, method.column as u32)
                         else {
                             continue;
                         };
 
-                        let (functions, _) =
-                            match get_definitions(source_index, &mut parsed_files, &sourcemap) {
-                                Ok(d) => d,
-                                Err(err) => {
-                                    return TokenStream::from(err.to_compile_error());
-                                }
-                            };
+                        let (functions, _) = match get_definitions(
+                            source_index,
+                            &mut parsed_files,
+                            &sourcemap,
+                            &import_spec,
+                        ) {
+                            Ok(d) => d,
+                            Err(err) => {
+                                return TokenStream::from(err.to_compile_error());
+                            }
+                        };
 
                         if let Some(function) = functions.get(&method.name) {
                             ts_functions_to_generate.push(function.clone());
                         }
                     }
 
-                    (ts_functions_to_generate, ts_classes_to_generate)
+                    ExtractedData {
+                        functions: ts_functions_to_generate,
+                        classes: ts_classes_to_generate,
+                    }
                 }
             }
         }
     };
 
-    for function in functions_to_generate.iter() {
+    for function in extracted_data.functions.iter() {
         for param in function.params.iter() {
             if param.name.starts_with("_") && param.name.ends_with("_") {
                 panic!(
@@ -2074,12 +2127,14 @@ pub fn use_js(input: TokenStream) -> TokenStream {
     let mut function_id_hasher = blake3::Hasher::new();
     function_id_hasher.update(unhashed_id.as_bytes());
 
-    let function_wrappers: Vec<TokenStream2> = functions_to_generate
+    let function_wrappers: Vec<TokenStream2> = extracted_data
+        .functions
         .iter()
         .map(|func| generate_invocation(None, func, &js_bundle_path, &function_id_hasher))
         .collect();
 
-    let class_wrappers: Vec<TokenStream2> = classes_to_generate
+    let class_wrappers: Vec<TokenStream2> = extracted_data
+        .classes
         .iter()
         .map(|class| generate_class_wrapper(class, &js_bundle_path, &function_id_hasher))
         .collect();
