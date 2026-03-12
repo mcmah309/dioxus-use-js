@@ -1024,7 +1024,7 @@ fn get_types_to_generate(
     ) -> Result<ExtractedData> {
         let mut resolved_function_infos = Vec::new();
         let mut resolved_class_infos = Vec::new();
-        // Replace add source tokens to relate back to macro definition
+        // Replace source tokens to relate back to macro usage
         for name in import_spec_names {
             let name_str = name.to_string();
 
