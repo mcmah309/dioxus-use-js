@@ -530,6 +530,8 @@ fn ts_type_to_rust_type_helper(mut ts_type: &str, can_be_ref: bool) -> Option<St
             }
         }
         "number" => Some("f64".to_owned()),
+        "i64" => Some("i64".to_owned()),
+        "u64" => Some("u64".to_owned()),
         "boolean" => Some("bool".to_owned()),
         "void" | "undefined" | "never" | "null" => Some(UNIT.to_owned()),
         JSON => {
@@ -2302,6 +2304,10 @@ mod tests {
             ts_type_to_rust_type(Some("number"), true).to_string(),
             "f64"
         );
+        assert_eq!(ts_type_to_rust_type(Some("i64"), false).to_string(), "i64");
+        assert_eq!(ts_type_to_rust_type(Some("i64"), true).to_string(), "i64");
+        assert_eq!(ts_type_to_rust_type(Some("u64"), false).to_string(), "u64");
+        assert_eq!(ts_type_to_rust_type(Some("u64"), true).to_string(), "u64");
         assert_eq!(
             ts_type_to_rust_type(Some("boolean"), false).to_string(),
             "bool"
@@ -2331,6 +2337,14 @@ mod tests {
             "Option<f64>"
         );
         assert_eq!(
+            ts_type_to_rust_type(Some("i64 | null"), true).to_string(),
+            "Option<i64>"
+        );
+        assert_eq!(
+            ts_type_to_rust_type(Some("u64 | null"), false).to_string(),
+            "Option<u64>"
+        );
+        assert_eq!(
             ts_type_to_rust_type(Some("boolean | null"), true).to_string(),
             "Option<bool>"
         );
@@ -2357,6 +2371,14 @@ mod tests {
         assert_eq!(
             ts_type_to_rust_type(Some("Array<number>"), false).to_string(),
             "Vec<f64>"
+        );
+        assert_eq!(
+            ts_type_to_rust_type(Some("Array<u64>"), true).to_string(),
+            "&[u64]"
+        );
+        assert_eq!(
+            ts_type_to_rust_type(Some("Array<u64>"), false).to_string(),
+            "Vec<u64>"
         );
     }
 
@@ -2522,6 +2544,14 @@ mod tests {
             ts_type_to_rust_type(Some("Map<number, string>"), false).to_string(),
             "std::collections::HashMap<f64, String>"
         );
+        assert_eq!(
+            ts_type_to_rust_type(Some("Map<u64, string>"), true).to_string(),
+            "&std::collections::HashMap<u64, String>"
+        );
+        assert_eq!(
+            ts_type_to_rust_type(Some("Map<u64, string>"), false).to_string(),
+            "std::collections::HashMap<u64, String>"
+        );
     }
 
     #[test]
@@ -2541,6 +2571,14 @@ mod tests {
         assert_eq!(
             ts_type_to_rust_type(Some("Set<number>"), false).to_string(),
             "std::collections::HashSet<f64>"
+        );
+        assert_eq!(
+            ts_type_to_rust_type(Some("Set<i64>"), true).to_string(),
+            "&std::collections::HashSet<i64>"
+        );
+        assert_eq!(
+            ts_type_to_rust_type(Some("Set<i64>"), false).to_string(),
+            "std::collections::HashSet<i64>"
         );
         assert_eq!(
             ts_type_to_rust_type(Some("Set<boolean>"), true).to_string(),
@@ -2635,6 +2673,36 @@ mod tests {
         assert_eq!(
             ts_type_to_rust_type(Some("JsValue | null"), false).to_string(),
             "Option<dioxus_use_js::JsValue>"
+        );
+    }
+
+    #[test]
+    fn test_type_alias_names_are_preserved_for_mapping() {
+        let ts_content = r#"
+            type i64 = number;
+            type u64 = number;
+
+            export function ints(value: i64, ids: Set<u64>): Map<u64, i64> {
+                return new Map([[1, value]]);
+            }
+        "#;
+
+        let (functions, classes) = parse_script("test.ts", ts_content, false).unwrap();
+        assert!(classes.is_empty());
+        let function = functions
+            .iter()
+            .find(|function| function.name == "ints" && function.is_exported)
+            .unwrap();
+        assert_eq!(function.params[0].js_type.as_deref(), Some("i64"));
+        assert_eq!(function.params[0].rust_type.to_string(), "i64");
+        assert_eq!(function.params[1].js_type.as_deref(), Some("Set<u64>"));
+        assert_eq!(
+            function.params[1].rust_type.to_string(),
+            "&std::collections::HashSet<u64>"
+        );
+        assert_eq!(
+            function.rust_return_type.to_string(),
+            "std::collections::HashMap<u64, i64>"
         );
     }
 

@@ -112,6 +112,8 @@ use_js!("source.ts", "bundle.js"::*);
 | --------------------- | ---------------- | ----------------- |
 | `string`              | `&str`           | `String`          |
 | `number`              | `f64`           | `f64`             |
+| `i64`                 | `i64`            | `i64`             |
+| `u64`                 | `u64`            | `u64`             |
 | `boolean`             | `bool`          | `bool`            |
 | `T \| null`           | `Option<&T>`     | `Option<T>`       |
 | `T[]`                 | `&[T]`           | `Vec<T>`          |
@@ -135,6 +137,15 @@ use_js!("source.ts", "bundle.js"::*);
 ## Special Types
 
 Special types are types not included in the regular Typescript type system, but are understood by the `use_js!` macro and may augment the generated binding code.
+
+For integer semantics on the Rust side, you can annotate with pseudo-types backed by TypeScript aliases:
+
+```ts
+type i64 = number;
+type u64 = number;
+```
+
+This keeps TypeScript happy with `number`, while generating `i64`/`u64` in Rust. Non-integer values will fail Rust deserialization.
 
 ### `Json`
 
