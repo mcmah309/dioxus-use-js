@@ -125,6 +125,8 @@ use_js!("source.ts", "bundle.js"::*);
 
 | TypeScript            | Rust Input       | Rust Output       |
 | --------------------- | ---------------- | ----------------- |
+| `i64`                 | `i64`            | `i64`             |
+| `u64`                 | `u64`            | `u64`             |
 | `Json`    | `&serde_json::Value` | `serde_json::Value` |
 | `JsValue<T>`, `JsValue`              | `&JsValue`       | `JsValue`         |
 | `RustCallback<T,TT>`     | `dioxus::core::Callback<T, impl Future<Output = Result<TT, serde_json::Value>> + 'static>` | `-`|
@@ -135,6 +137,17 @@ use_js!("source.ts", "bundle.js"::*);
 ## Special Types
 
 Special types are types not included in the regular Typescript type system, but are understood by the `use_js!` macro and may augment the generated binding code.
+
+### Integers
+
+When an integer is specifically needed rather than a float, one can explictly declare so.
+
+```ts
+type i64 = number;
+type u64 = number;
+```
+
+`i64`/`u64` will be used on the Rust side rather than `f64`. Note, non-integer values will fail deserialization.
 
 ### `Json`
 
