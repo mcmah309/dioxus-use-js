@@ -260,6 +260,8 @@ type RustCallback<A, R> = (arg: A) => Promise<R>;
 - `Set<T>`
 - `void`
 - `Json`
+- `i64`
+- `u64`
 
 Multiple invocations of a `RustCallback` can be inflight at the same time e.g.
 ```js
