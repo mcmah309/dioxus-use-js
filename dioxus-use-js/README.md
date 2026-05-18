@@ -138,9 +138,9 @@ use_js!("source.ts", "bundle.js"::*);
 
 Special types are types not included in the regular Typescript type system, but are understood by the `use_js!` macro and may augment the generated binding code.
 
-### Integars
+### Integers
 
-When an integar is specifically needed, rather than a float, one can explictly declare so.
+When an integer is specifically needed rather than a float, one can explictly declare so.
 
 ```ts
 type i64 = number;
