@@ -188,7 +188,7 @@ fn App() -> Element {
     let counter: Resource<Result<Counter, JsError>> =
         use_resource(|| async move { Counter::createDefault().await });
 
-    let counter_instance_example: Resource<Result<f64, JsError>> =
+    let counter_instance_example: Resource<Result<u64, JsError>> =
         use_resource(move || async move {
             let counter_read = counter.read();
             if counter_read.is_none() {
@@ -200,14 +200,14 @@ fn App() -> Element {
             let counter = counter_read.clone().unwrap().unwrap();
 
             let _initial = counter.getCount().await?;
-            counter.increment(10.0).await?;
+            counter.increment(10).await?;
             counter.doubleAsync().await?;
-            let final_count = counter.increment(2.0).await?;
+            let final_count = counter.increment(2).await?;
             Ok(final_count)
         });
 
-    let counter_static_example: Resource<Result<f64, JsError>> = use_resource(|| async move {
-        let result = Counter::add(5.0, 10.0).await?;
+    let counter_static_example: Resource<Result<u64, JsError>> = use_resource(|| async move {
+        let result = Counter::add(5, 10).await?;
         Ok(result)
     });
 
@@ -305,7 +305,7 @@ fn App() -> Element {
                     button {
                         onclick: move |_| async move {
                             let counter = counter.peek().as_ref().unwrap().clone().unwrap();
-                            counter.increment(1.0).await.unwrap();
+                            counter.increment(1).await.unwrap();
                         },
                         "increment (check logs)"
                     }

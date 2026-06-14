@@ -3,7 +3,7 @@ export { createJsObjectPromiseNullable, useJsObjectNullable } from "./exports";
 /// This is a reserved marker type that tells the `use_js!` macro to not do serialization and
 /// deserialization, but instead create a shim and return an opaque proxy object that can be used to
 /// reference the internal js object, so it can be passed around on the rust side. 
-type JsValue<T = any> = T;
+export type JsValue<T = any> = T;
 
 // input of void means takes no arguments
 // output of void means it returns no arguments
@@ -11,9 +11,12 @@ type RustCallback<A, R> = (arg: A) => Promise<R>;
 
 type Json = string | number | boolean | null | { [key: string]: Json } | Json[];
 
+type u64 = number;
+
 /** 
  * Creates a greeting
 */
+// @ts-ignore
 export function greeting(from, to: string): string {
     return `Hello ${to}, this is ${from} speaking from JavaScript!`;
 }
@@ -22,7 +25,7 @@ export async function sleep(ms: number): Promise<void> {
     return new Promise(resolve => setTimeout(resolve, ms));
 }
 
-type MyObject = {
+export type MyObject = {
     name: string;
     method: (value: number) => number;
 };
@@ -104,7 +107,7 @@ export async function callback6(callback: RustCallback<void, void>): Promise<str
 type Drop = Promise<void>;
 
 export async function callbackAndDrop(callback: RustCallback<number[], void>, drop: Drop): Promise<number> {
-    let handler = async (e) => {
+    let handler = async (e: any) => {
         await callback([e.pageX, e.pageY]);
     };
 
@@ -129,10 +132,10 @@ export async function dropOnly(drop: Drop): Promise<number> {
  * Class test
  */
 export class Counter {
-    private count: number;
+    private count: u64;
     private log: RustCallback<string, void>;
 
-    constructor(initialValue: number) {
+    constructor(initialValue: u64) {
         this.count = initialValue;
         this.log = async (value) => console.info(value);
     }
@@ -147,21 +150,21 @@ export class Counter {
     /**
      * Static method to add two numbers
      */
-    static add(a: number, b: number): number {
+    static add(a: u64, b: u64): u64 {
         return a + b;
     }
 
     /**
      * Get the current count
      */
-    getCount(): number {
+    getCount(): u64 {
         return this.count;
     }
 
     /**
      * Increment the counter by a value
      */
-    increment(value: number): number {
+    increment(value: u64): u64 {
         this.count += value;
         this.log(`Incremented by ${value}`);
         this.log(`New count is ${this.count}`);
@@ -185,13 +188,13 @@ export class Counter {
     }
 }
 
-class LaterExportTest {}
+class LaterExportTest { }
 export { LaterExportTest };
 
 // Functions not used in example but still generated through `*`
 //************************************************************************//
-
-export async function untyped(input) {
+// @ts-ignore
+export async function untyped(_input) {
     return null;
 }
 

@@ -1,3 +1,5 @@
+import { type JsValue, MyObject } from "./example";
+
 export async function createJsObjectPromiseNullable(): Promise<(JsValue<MyObject> | null)> {
     return Promise.resolve(null);
 }
