@@ -185,6 +185,9 @@ export class Counter {
     }
 }
 
+class LaterExportTest {}
+export { LaterExportTest };
+
 // Functions not used in example but still generated through `*`
 //************************************************************************//
 

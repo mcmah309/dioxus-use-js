@@ -20,7 +20,8 @@ use_js!("js-utils/src/example.ts", "assets/example.js"::{
     callback4,
     callback5,
     callback6,
-    Counter
+    Counter,
+    LaterExportTest
 });
 // Since we are generating source maps through bun, we don't have to specify the typescript source file
 // it will automatically look for a linked source map to determine the types

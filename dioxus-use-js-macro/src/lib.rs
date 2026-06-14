@@ -841,16 +841,16 @@ impl Visit for JsVisitor {
 
                 // These are visited after the declarations so if this is exporting a function or a class, it should be findable here
                 if let Some(func) = self.functions.iter_mut().find(|f| f.name == original_name) {
-                    let mut func = func.clone();
-                    func.name = out_name.clone();
                     func.is_exported = true;
-                    self.functions.push(func);
+                    if out_name != original_name {
+                        func.name = out_name.clone();
+                    }
                 }
                 if let Some(class) = self.classes.iter_mut().find(|c| c.name == original_name) {
-                    let mut class = class.clone();
-                    class.name = out_name.clone();
                     class.is_exported = true;
-                    self.classes.push(class);
+                    if out_name != original_name {
+                        class.name = out_name.clone();
+                    }
                 }
             }
         }
