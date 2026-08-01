@@ -236,6 +236,7 @@ enum RustType {
     Callback(RustCallback),
     JsValue(JsValue),
     Result(ResultType),
+    Tuple(Vec<RustType>),
 }
 
 impl ToString for RustType {
@@ -245,6 +246,14 @@ impl ToString for RustType {
             RustType::Callback(callback) => callback.to_string(),
             RustType::JsValue(js_value) => js_value.to_string(),
             RustType::Result(result) => result.to_string(),
+            RustType::Tuple(elements) => {
+                let elements = elements.iter().map(ToString::to_string).collect::<Vec<_>>();
+                if elements.len() == 1 {
+                    format!("({},)", elements[0])
+                } else {
+                    format!("({})", elements.join(", "))
+                }
+            }
         }
     }
 }
@@ -370,6 +379,22 @@ fn ts_type_to_rust_type(ts_type: Option<&str>, is_input: bool) -> RustType {
         ts_type = &ts_type[8..ts_type.len() - 1];
     }
     ts_type = strip_parenthesis(&mut ts_type);
+    if ts_type.starts_with('[') && ts_type.ends_with(']') {
+        assert!(
+            !is_input,
+            "Tuples cannot be used as input types: {}",
+            ts_type
+        );
+        let inner = &ts_type[1..ts_type.len() - 1];
+        let parts = split_into_args(inner);
+        assert!(!parts.is_empty(), "Empty tuples are not supported");
+        return RustType::Tuple(
+            parts
+                .into_iter()
+                .map(|part| ts_type_to_rust_type(Some(part), false))
+                .collect(),
+        );
+    }
     if ts_type.starts_with("Result<") {
         assert!(
             !is_input,
@@ -492,6 +517,17 @@ fn output_expression(rust_type: &RustType, value: &str, func_call_full_path: &st
             let ok = output_expression(&result.ok, &format!("{value}.Ok"), func_call_full_path);
             let err = output_expression(&result.err, &format!("{value}.Err"), func_call_full_path);
             format!("(\"Ok\" in {value}?{{Ok:{ok}}}:{{Err:{err}}})")
+        }
+        RustType::Tuple(elements) => {
+            let elements = elements
+                .iter()
+                .enumerate()
+                .map(|(index, rust_type)| {
+                    output_expression(rust_type, &format!("{value}[{index}]"), func_call_full_path)
+                })
+                .collect::<Vec<_>>()
+                .join(",");
+            format!("[{elements}]")
         }
     }
 }
@@ -1385,6 +1421,9 @@ fn generate_invocation(
                 RustType::Result(_) => {
                     unreachable!("Result cannot be used as an input type")
                 }
+                RustType::Tuple(_) => {
+                    unreachable!("Tuple cannot be used as an input type")
+                }
                 RustType::JsValue(js_value) => {
                     if js_value.is_option {
                         Some(quote! {
@@ -1431,6 +1470,7 @@ fn generate_invocation(
                 format!("let {}=await dioxus.recv();", param.name)
             }
             RustType::Result(_) => unreachable!("Result cannot be used as an input type"),
+            RustType::Tuple(_) => unreachable!("Tuple cannot be used as an input type"),
             RustType::JsValue(js_value) => {
                 let param_name = &param.name;
                 if js_value.is_option {
@@ -1501,7 +1541,7 @@ fn generate_invocation(
         RustType::Callback(_) => {
             unreachable!("This cannot be an output type, the macro should have panicked earlier.")
         }
-        RustType::Result(_) | RustType::JsValue(_) => {
+        RustType::Result(_) | RustType::JsValue(_) | RustType::Tuple(_) => {
             let converted = output_expression(&func.rust_return_type, "_v_", &func_call_full_path);
             format!(
                 "const _v_={maybe_await} {func_call_full_path}({call_params});return [true,{converted}];"
@@ -2765,6 +2805,35 @@ mod tests {
         assert!(expression.contains("const _x_=value.Ok"));
         assert!(expression.contains("window[_j_]=_x_"));
         assert!(expression.ends_with(":{Err:value.Err})"));
+    }
+
+    #[test]
+    fn test_tuple_outputs() {
+        assert_eq!(
+            ts_type_to_rust_type(Some("[string, number, boolean]"), false).to_string(),
+            "(String, f64, bool)"
+        );
+        assert_eq!(
+            ts_type_to_rust_type(
+                Some("[JsValue<MyObject>, Result<u64, string>, i64, u64]"),
+                false
+            )
+            .to_string(),
+            "(dioxus_use_js::JsValue, Result<u64, String>, i64, u64)"
+        );
+    }
+
+    #[test]
+    fn test_tuple_special_output_transport() {
+        let rust_type = ts_type_to_rust_type(
+            Some("[JsValue<MyObject>, Result<u64, JsValue<MyObject>>]"),
+            false,
+        );
+        let expression = output_expression(&rust_type, "value", "example");
+        assert!(expression.starts_with("[(()=>{const _x_=value[0]"));
+        assert!(expression.contains("\"Ok\" in value[1]?{Ok:value[1].Ok}"));
+        assert!(expression.contains("const _x_=value[1].Err"));
+        assert!(expression.ends_with("})]"));
     }
 
     #[test]

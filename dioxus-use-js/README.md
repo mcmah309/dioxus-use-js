@@ -120,6 +120,7 @@ use_js!("source.ts", "bundle.js"::*);
 | `void`, `undefined`, `never`, `null` | `-` | `()` |
 | `any`, `unknown`, `object`, `-`, `*`     | `impl serde::Serialize` | `T: serde::de::DeserializeOwned` |
 | `Promise<T>`              | `&T`    | `T`    |
+| `[A,B,..]`            |      `-`     |   `(A,B,..)`   |
 
 ### Special Types
 

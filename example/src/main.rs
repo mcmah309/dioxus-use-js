@@ -15,6 +15,8 @@ use_js!("js-utils/src/example.ts", "assets/example.js"::{
     createJsObjectPromise,
     createResult,
     createResultJsValue,
+    multipleReturn,
+    multipleReturnSpecial,
     sleep,
     callback1,
     callback2,
@@ -213,6 +215,24 @@ fn App() -> Element {
         }
     });
 
+    let tuple_example: Resource<Result<String, JsError>> = use_resource(|| async move {
+        let (text, number, boolean) = multipleReturn().await?;
+        Ok(format!("{text}, {number}, {boolean}"))
+    });
+
+    let tuple_special_example: Resource<Result<String, String>> = use_resource(|| async move {
+        let (js_value, result, signed, unsigned) = multipleReturnSpecial()
+            .await
+            .map_err(|error| error.to_string())?;
+        let js_value_result = useJsObject(10.0, &js_value)
+            .await
+            .map_err(|error| error.to_string())?;
+        let result = result?;
+        Ok(format!(
+            "JsValue: {js_value_result}, Result: {result}, i64: {signed}, u64: {unsigned}"
+        ))
+    });
+
     // Can create instance in one resource then share with others
     let counter: Resource<Result<Counter, JsError>> =
         use_resource(|| async move { Counter::createDefault().await });
@@ -336,6 +356,18 @@ fn App() -> Element {
                 div {
                     h3 { "Result<JsValue> Err (expected: `\"Not created\"`)" }
                     {example_result(&result_js_value_err_example.read())}
+                }
+            }
+
+            section {
+                h2 { "Tuple Output Examples" }
+                div {
+                    h3 { "Primitives (expected: `hi, 1, true`):" }
+                    {example_result(&tuple_example.read())}
+                }
+                div {
+                    h3 { "JsValue, Result, i64, and u64 (expected: `JsValue: 35, Result: 321, i64: -64, u64: 64`):" }
+                    {example_result(&tuple_special_example.read())}
                 }
             }
 

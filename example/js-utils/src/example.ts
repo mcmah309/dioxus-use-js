@@ -14,6 +14,7 @@ type Json = string | number | boolean | null | { [key: string]: Json } | Json[];
 type Result<T, E> = { Ok: T } | { Err: E };
 
 type u64 = number;
+type i64 = number;
 
 /** 
  * Creates a greeting
@@ -62,6 +63,14 @@ export function createResultJsValue(ok: boolean): Result<JsValue<MyObject>, stri
 
 export function createResult(ok: boolean): Result<u64, string> {
     return ok ? { Ok: 321 } : { Err: "Error text" };
+}
+
+export function multipleReturn(): [string, number, boolean] {
+    return ["hi", 1, true];
+}
+
+export function multipleReturnSpecial(): [JsValue<MyObject>, Result<u64, string>, i64, u64] {
+    return [createJsObject(), { Ok: 321 }, -64, 64];
 }
 
 export async function callback1(startingValue: number, callback: RustCallback<number, number>): Promise<number> {
