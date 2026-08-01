@@ -1187,6 +1187,7 @@ fn generate_class_wrapper(
     class_info: &ClassInfo,
     asset_path: &LitStr,
     function_id_hasher: &blake3::Hasher,
+    module_ident: &Ident,
 ) -> TokenStream2 {
     let class_ident = class_info
         .ident
@@ -1228,6 +1229,7 @@ fn generate_class_wrapper(
             &func_info,
             asset_path,
             function_id_hasher,
+            module_ident,
         );
 
         let method_name = format_ident!("{}", method.name);
@@ -1370,6 +1372,7 @@ fn generate_invocation(
     func: &FunctionInfo,
     asset_path: &LitStr,
     function_id_hasher: &blake3::Hasher,
+    module_ident: &Ident,
 ) -> TokenStream2 {
     let is_class_method = class.as_ref().is_some_and(|e| !e.is_static);
     let mut params = func.params.clone();
@@ -1620,8 +1623,7 @@ fn generate_invocation(
             }
         } else {
             quote! {
-                const MODULE: Asset = asset!(#asset_path);
-                let js = format!(#js_format, MODULE, &invocation_id);
+                let js = format!(#js_format, #module_ident, &invocation_id);
             }
         };
         let function_id = {
@@ -1650,8 +1652,7 @@ fn generate_invocation(
             }
         } else {
             quote! {
-                const MODULE: Asset = asset!(#asset_path);
-                let js = format!(#js_format, MODULE);
+                let js = format!(#js_format, #module_ident);
                 let mut eval = dioxus::document::eval(js.as_str());
             }
         }
@@ -2276,20 +2277,33 @@ pub fn use_js(input: TokenStream) -> TokenStream {
     unhashed_id.push_str(":");
     let mut function_id_hasher = blake3::Hasher::new();
     function_id_hasher.update(unhashed_id.as_bytes());
+    let module_id = function_id_hasher.finalize().to_hex().to_uppercase();
+    let module_ident = format_ident!("__MODULE_{}", &module_id[..20]);
 
     let function_wrappers: Vec<TokenStream2> = extracted_data
         .functions
         .iter()
-        .map(|func| generate_invocation(None, func, &js_bundle_path, &function_id_hasher))
+        .map(|func| {
+            generate_invocation(
+                None,
+                func,
+                &js_bundle_path,
+                &function_id_hasher,
+                &module_ident,
+            )
+        })
         .collect();
 
     let class_wrappers: Vec<TokenStream2> = extracted_data
         .classes
         .iter()
-        .map(|class| generate_class_wrapper(class, &js_bundle_path, &function_id_hasher))
+        .map(|class| {
+            generate_class_wrapper(class, &js_bundle_path, &function_id_hasher, &module_ident)
+        })
         .collect();
 
     let expanded = quote! {
+        const #module_ident: Asset = asset!(#js_bundle_path);
         #(#function_wrappers)*
         #(#class_wrappers)*
     };
