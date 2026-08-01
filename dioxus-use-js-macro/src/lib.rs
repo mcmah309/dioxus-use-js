@@ -21,7 +21,6 @@ use swc_ecma_ast::{
 use swc_ecma_parser::EsSyntax;
 use swc_ecma_parser::{Parser, StringInput, Syntax, lexer::Lexer};
 use swc_ecma_visit::{Visit, VisitWith};
-use syn::TypeParam;
 use syn::{
     Ident, LitStr, Result, Token,
     parse::{Parse, ParseStream},
@@ -33,8 +32,6 @@ const JSVALUE_START: &str = "JsValue";
 const JSVALUE: &str = "dioxus_use_js::JsValue";
 const DEFAULT_GENRIC_INPUT: &str = "impl dioxus_use_js::SerdeSerialize";
 const DEFAULT_GENERIC_OUTPUT: &str = "DeserializeOwned";
-const DEFAULT_OUTPUT_GENERIC_DECLARTION: &str =
-    "DeserializeOwned: dioxus_use_js::SerdeDeDeserializeOwned";
 const SERDE_VALUE: &str = "dioxus_use_js::SerdeJsonValue";
 const JSON: &str = "Json";
 /// `Result<T, E>`
@@ -1902,19 +1899,71 @@ fn return_type_tokens(
     span: Option<proc_macro2::Span>,
 ) -> (proc_macro2::TokenStream, Option<proc_macro2::TokenStream>) {
     let span = span.unwrap_or_else(|| proc_macro2::Span::call_site());
-    let parsed_type = return_type.to_tokens();
-    if return_type.to_string() == DEFAULT_GENERIC_OUTPUT {
-        let generic = Ident::new(DEFAULT_GENERIC_OUTPUT, span);
-        let generic_decl: TypeParam = syn::parse_str(DEFAULT_OUTPUT_GENERIC_DECLARTION).unwrap();
-        (
-            quote! { Result<#generic, dioxus_use_js::JsError> },
-            Some(quote! { <#generic_decl> }),
-        )
+
+    fn generic_output_count(return_type: &RustType) -> usize {
+        match return_type {
+            RustType::Regular(ty) => usize::from(ty == DEFAULT_GENERIC_OUTPUT),
+            RustType::Result(result) => {
+                generic_output_count(&result.ok) + generic_output_count(&result.err)
+            }
+            RustType::Tuple(elements) => elements.iter().map(generic_output_count).sum(),
+            RustType::Callback(_) | RustType::JsValue(_) => 0,
+        }
+    }
+
+    fn type_tokens_with_generics(
+        return_type: &RustType,
+        generics: &[Ident],
+        generic_index: &mut usize,
+    ) -> TokenStream2 {
+        match return_type {
+            RustType::Regular(ty) if ty == DEFAULT_GENERIC_OUTPUT => {
+                let generic = &generics[*generic_index];
+                *generic_index += 1;
+                quote! { #generic }
+            }
+            RustType::Result(result) => {
+                let ok = type_tokens_with_generics(&result.ok, generics, generic_index);
+                let err = type_tokens_with_generics(&result.err, generics, generic_index);
+                quote! { Result<#ok, #err> }
+            }
+            RustType::Tuple(elements) => {
+                let elements = elements
+                    .iter()
+                    .map(|element| type_tokens_with_generics(element, generics, generic_index))
+                    .collect::<Vec<_>>();
+                if elements.len() == 1 {
+                    quote! { (#(#elements),*,) }
+                } else {
+                    quote! { (#(#elements),*) }
+                }
+            }
+            _ => return_type.to_tokens(),
+        }
+    }
+
+    let generic_count = generic_output_count(return_type);
+    let generics = (0..generic_count)
+        .map(|index| {
+            let name = if generic_count == 1 {
+                DEFAULT_GENERIC_OUTPUT.to_owned()
+            } else {
+                format!("{DEFAULT_GENERIC_OUTPUT}{}", index + 1)
+            };
+            Ident::new(&name, span)
+        })
+        .collect::<Vec<_>>();
+    let mut generic_index = 0;
+    let parsed_type = type_tokens_with_generics(return_type, &generics, &mut generic_index);
+    let return_type = quote! { Result<#parsed_type, dioxus_use_js::JsError> };
+
+    if generics.is_empty() {
+        (return_type, None)
     } else {
-        (
-            quote! { Result<#parsed_type, dioxus_use_js::JsError> },
-            None,
-        )
+        let generic_declarations = generics
+            .iter()
+            .map(|generic| quote! { #generic: dioxus_use_js::SerdeDeDeserializeOwned });
+        (return_type, Some(quote! { <#(#generic_declarations),*> }))
     }
 }
 
@@ -2820,6 +2869,42 @@ mod tests {
             )
             .to_string(),
             "(dioxus_use_js::JsValue, Result<u64, String>, i64, u64)"
+        );
+    }
+
+    #[test]
+    fn test_nested_unknown_outputs_use_distinct_generics() {
+        let result_type = ts_type_to_rust_type(Some("Result<MyOk, MyErr>"), false);
+        let (return_type, generics) = return_type_tokens(&result_type, None);
+        assert_eq!(
+            return_type.to_string(),
+            "Result < Result < DeserializeOwned1 , DeserializeOwned2 > , dioxus_use_js :: JsError >"
+        );
+        assert_eq!(
+            generics.unwrap().to_string(),
+            "< DeserializeOwned1 : dioxus_use_js :: SerdeDeDeserializeOwned , DeserializeOwned2 : dioxus_use_js :: SerdeDeDeserializeOwned >"
+        );
+
+        let tuple_type = ts_type_to_rust_type(Some("[MyOk, number, MyErr]"), false);
+        let (return_type, generics) = return_type_tokens(&tuple_type, None);
+        assert_eq!(
+            return_type.to_string(),
+            "Result < (DeserializeOwned1 , f64 , DeserializeOwned2) , dioxus_use_js :: JsError >"
+        );
+        assert!(generics.is_some());
+    }
+
+    #[test]
+    fn test_single_unknown_output_keeps_existing_generic_name() {
+        let return_type = ts_type_to_rust_type(Some("MyValue"), false);
+        let (return_type, generics) = return_type_tokens(&return_type, None);
+        assert_eq!(
+            return_type.to_string(),
+            "Result < DeserializeOwned , dioxus_use_js :: JsError >"
+        );
+        assert_eq!(
+            generics.unwrap().to_string(),
+            "< DeserializeOwned : dioxus_use_js :: SerdeDeDeserializeOwned >"
         );
     }
 

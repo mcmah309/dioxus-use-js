@@ -65,8 +65,19 @@ export function createResult(ok: boolean): Result<u64, string> {
     return ok ? { Ok: 321 } : { Err: "Error text" };
 }
 
+type MyOk = u64;
+type MyErr = string;
+
+export function createResultCustom(ok: boolean): Result<MyOk, MyErr> {
+    return ok ? { Ok: 321 } : { Err: "Error text" };
+}
+
 export function multipleReturn(): [string, number, boolean] {
     return ["hi", 1, true];
+}
+
+export function multipleReturnCustom(): [MyOk, number, MyErr] {
+    return [67, 1, "This is a cool string"];
 }
 
 export function multipleReturnSpecial(): [JsValue<MyObject>, Result<u64, string>, i64, u64] {

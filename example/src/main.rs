@@ -14,8 +14,10 @@ use_js!("js-utils/src/example.ts", "assets/example.js"::{
     useJsObject,
     createJsObjectPromise,
     createResult,
+    createResultCustom,
     createResultJsValue,
     multipleReturn,
+    multipleReturnCustom,
     multipleReturnSpecial,
     sleep,
     callback1,
@@ -201,6 +203,19 @@ fn App() -> Element {
         }
     });
 
+    let result_custom_example: Resource<Result<String, String>> = use_resource(|| async move {
+        let ok = createResultCustom::<u64, String>(true)
+            .await
+            .map_err(|error| error.to_string())??;
+        let result = createResultCustom::<u64, String>(false)
+            .await
+            .map_err(|error| error.to_string())?;
+        let Err(error) = result else {
+            return Err("Unexpected Ok result".to_owned());
+        };
+        Ok(format!("{ok}, {error}"))
+    });
+
     let result_js_value_ok_example: Resource<Result<f64, String>> = use_resource(|| async move {
         let value = createResultJsValue(true).await.map_err(|e| e.to_string())??;
         let value = useJsObject(33.0, &value).await.map_err(|e| e.to_string())?;
@@ -218,6 +233,11 @@ fn App() -> Element {
     let tuple_example: Resource<Result<String, JsError>> = use_resource(|| async move {
         let (text, number, boolean) = multipleReturn().await?;
         Ok(format!("{text}, {number}, {boolean}"))
+    });
+
+    let tuple_custom_example: Resource<Result<String, JsError>> = use_resource(|| async move {
+        let (ok, number, error) = multipleReturnCustom::<u64, String>().await?;
+        Ok(format!("{ok}, {number}, {error}"))
     });
 
     let tuple_special_example: Resource<Result<String, String>> = use_resource(|| async move {
@@ -350,6 +370,10 @@ fn App() -> Element {
                     {example_result(&result_err_example.read())}
                 }
                 div {
+                    h3 { "Custom Result Types (expected: `321, Error text`):" }
+                    {example_result(&result_custom_example.read())}
+                }
+                div {
                     h3 { "Result<JsValue> Ok (expected: `58`):" }
                     {example_result(&result_js_value_ok_example.read())}
                 }
@@ -364,6 +388,10 @@ fn App() -> Element {
                 div {
                     h3 { "Primitives (expected: `hi, 1, true`):" }
                     {example_result(&tuple_example.read())}
+                }
+                div {
+                    h3 { "Custom Types (expected: `67, 1, This is a cool string`):" }
+                    {example_result(&tuple_custom_example.read())}
                 }
                 div {
                     h3 { "JsValue, Result, i64, and u64 (expected: `JsValue: 35, Result: 321, i64: -64, u64: 64`):" }
