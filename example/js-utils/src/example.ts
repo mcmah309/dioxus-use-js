@@ -11,6 +11,8 @@ type RustCallback<A, R> = (arg: A) => Promise<R>;
 
 type Json = string | number | boolean | null | { [key: string]: Json } | Json[];
 
+type Result<T, E> = { Ok: T } | { Err: E };
+
 type u64 = number;
 
 /** 
@@ -52,6 +54,14 @@ export function useJsObject(input: number, value: JsValue<MyObject>): number {
 
 export async function createJsObjectPromise(): Promise<JsValue<MyObject>> {
     return Promise.resolve(createJsObject());
+}
+
+export function createResultJsValue(ok: boolean): Result<JsValue<MyObject>, string> {
+    return ok ? { Ok: createJsObject() } : { Err: "Not created" };
+}
+
+export function createResult(ok: boolean): Result<u64, string> {
+    return ok ? { Ok: 321 } : { Err: "Error text" };
 }
 
 export async function callback1(startingValue: number, callback: RustCallback<number, number>): Promise<number> {

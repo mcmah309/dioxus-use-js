@@ -125,10 +125,10 @@ use_js!("source.ts", "bundle.js"::*);
 
 | TypeScript            | Rust Input       | Rust Output       |
 | --------------------- | ---------------- | ----------------- |
-| `i64`                 | `i64`            | `i64`             |
-| `u64`                 | `u64`            | `u64`             |
+| `i64`/`u64`                 | `i64`/`u64`           | `i64`/`u64`             |
 | `Json`    | `&serde_json::Value` | `serde_json::Value` |
 | `JsValue<T>`, `JsValue`              | `&JsValue`       | `JsValue`         |
+| `Result<T, E>` | `-` | `Result<T, E>` |
 | `RustCallback<T,TT>`     | `dioxus::core::Callback<T, impl Future<Output = Result<TT, serde_json::Value>> + 'static>` | `-`|
 | `Drop`     | `-` | `-`|
 
@@ -137,6 +137,18 @@ use_js!("source.ts", "bundle.js"::*);
 ## Special Types
 
 Special types are types not included in the regular Typescript type system, but are understood by the `use_js!` macro and may augment the generated binding code.
+
+### Result
+
+`Result<T, E>` maps a tagged TypeScript union returned from JavaScript to Rust's `Result<T, E>`. Both branches use the same regular and special output type mappings. It is not valid as a function input.
+
+```ts
+type Result<T, E> = { Ok: T } | { Err: E };
+```
+
+For example, `Result<JsValue<MyObject>, string>` maps to `Result<JsValue, String>`.
+
+When an error is thrown on the js side, a generated functions return value is `Err(JsError::Thrown { name })`. The thrown value is not passed through. Instead it is logged on the js side as a `warn`. Think of throwing as a "panic" and the boundary between js and rust as a panic handler. If it is desried to pass a thrown value back, one should wrap the function in a `try`/`catch` and use this `Result` type. Custom handling logic for `Err` side should be implemented and the value passed through the regular channel. The return value of the function generated in this scenario would look like `Ok(Result<T,E>)`.
 
 ### Integers
 
@@ -415,6 +427,7 @@ export class Counter {
 ```
 
 **Generated Rust**:
+
 ```rust,ignore
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub struct Counter(dioxus_use_js::JsValue);
@@ -423,24 +436,27 @@ impl Counter {
     pub fn new(js_value: dioxus_use_js::JsValue) -> Self {
         Self(js_value)
     }
-}
-impl Counter {
+
     #[doc = " Static factory method"]
     pub async fn createDefault() -> Result<Counter, dioxus_use_js::JsError> {
         unimplemented!("Removed for the example");
     }
+
     #[doc = " Static method to add two numbers"]
     pub async fn add(a: f64, b: f64) -> Result<f64, dioxus_use_js::JsError> {
         unimplemented!("Removed for the example");
     }
+
     #[doc = " Get the current count"]
     pub async fn getCount(&self) -> Result<f64, dioxus_use_js::JsError> {
         unimplemented!("Removed for the example");
     }
+
     #[doc = " Increment the counter by a value"]
     pub async fn increment(&self, value: f64) -> Result<f64, dioxus_use_js::JsError> {
         unimplemented!("Removed for the example");
     }
+
     #[doc = " If set logs every increment on the rust side"]
     pub async fn setLog(
         &self,
@@ -451,11 +467,13 @@ impl Counter {
     ) -> Result<(), dioxus_use_js::JsError> {
         unimplemented!("Removed for the example");
     }
+
     #[doc = " Async method to double the count"]
     pub async fn doubleAsync(&self) -> Result<f64, dioxus_use_js::JsError> {
         unimplemented!("Removed for the example");
     }
 }
+
 impl AsRef<dioxus_use_js::JsValue> for Counter {
     fn as_ref(&self) -> &dioxus_use_js::JsValue {
         &self.0

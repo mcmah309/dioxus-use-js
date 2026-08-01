@@ -37,6 +37,8 @@ const DEFAULT_OUTPUT_GENERIC_DECLARTION: &str =
     "DeserializeOwned: dioxus_use_js::SerdeDeDeserializeOwned";
 const SERDE_VALUE: &str = "dioxus_use_js::SerdeJsonValue";
 const JSON: &str = "Json";
+/// `Result<T, E>`
+const RESULT_START: &str = "Result";
 /// `RustCallback<T,TT>`
 const RUST_CALLBACK_JS_START: &str = "RustCallback";
 const UNIT: &str = "()";
@@ -233,6 +235,7 @@ enum RustType {
     Regular(String),
     Callback(RustCallback),
     JsValue(JsValue),
+    Result(ResultType),
 }
 
 impl ToString for RustType {
@@ -241,6 +244,7 @@ impl ToString for RustType {
             RustType::Regular(ty) => ty.clone(),
             RustType::Callback(callback) => callback.to_string(),
             RustType::JsValue(js_value) => js_value.to_string(),
+            RustType::Result(result) => result.to_string(),
         }
     }
 }
@@ -295,6 +299,18 @@ impl ToString for JsValue {
                 JSVALUE.to_owned()
             }
         }
+    }
+}
+
+#[derive(Debug, Clone)]
+struct ResultType {
+    ok: Box<RustType>,
+    err: Box<RustType>,
+}
+
+impl ToString for ResultType {
+    fn to_string(&self) -> String {
+        format!("Result<{}, {}>", self.ok.to_string(), self.err.to_string())
     }
 }
 
@@ -354,6 +370,26 @@ fn ts_type_to_rust_type(ts_type: Option<&str>, is_input: bool) -> RustType {
         ts_type = &ts_type[8..ts_type.len() - 1];
     }
     ts_type = strip_parenthesis(&mut ts_type);
+    if ts_type.starts_with("Result<") {
+        assert!(
+            !is_input,
+            "Result cannot be used as input type: {}",
+            ts_type
+        );
+        let ts_type = &ts_type[RESULT_START.len()..];
+        if !(ts_type.starts_with("<") && ts_type.ends_with(">")) {
+            panic!("Invalid Result type: {}", ts_type);
+        }
+        let inner = &ts_type[1..ts_type.len() - 1];
+        let parts = split_into_args(inner);
+        if parts.len() != 2 {
+            panic!("A Result type expects two parameters, got: {:?}", parts);
+        }
+        return RustType::Result(ResultType {
+            ok: Box::new(ts_type_to_rust_type(Some(parts[0]), false)),
+            err: Box::new(ts_type_to_rust_type(Some(parts[1]), false)),
+        });
+    }
     if ts_type.contains(JSVALUE_START) {
         let parts = split_top_level_union(ts_type);
         let len = parts.len();
@@ -432,6 +468,32 @@ fn ts_type_to_rust_type(ts_type: Option<&str>, is_input: bool) -> RustType {
         })
         .to_owned(),
     })
+}
+
+fn output_expression(rust_type: &RustType, value: &str, func_call_full_path: &str) -> String {
+    match rust_type {
+        RustType::Regular(_) => value.to_owned(),
+        RustType::Callback(_) => {
+            unreachable!("RustCallback cannot be nested in another special type")
+        }
+        RustType::JsValue(js_value) => {
+            let null_check = if js_value.is_option {
+                "if(_x_===null||_x_===undefined){return null;}".to_owned()
+            } else {
+                format!(
+                    "if(_x_===null||_x_===undefined){{console.error(\"The result of `{func_call_full_path}` was null or undefined, but a value is needed for JsValue\");return null;}}"
+                )
+            };
+            format!(
+                "(()=>{{const _x_={value};{null_check}let _j_=\"__js-value-\"+crypto.randomUUID();window[_j_]=_x_;return _j_;}})()"
+            )
+        }
+        RustType::Result(result) => {
+            let ok = output_expression(&result.ok, &format!("{value}.Ok"), func_call_full_path);
+            let err = output_expression(&result.err, &format!("{value}.Err"), func_call_full_path);
+            format!("(\"Ok\" in {value}?{{Ok:{ok}}}:{{Err:{err}}})")
+        }
+    }
 }
 
 /// Returns None if could not determine type
@@ -1320,6 +1382,9 @@ fn generate_invocation(
                 RustType::Regular(_) => Some(quote! {
                     eval.send(#param_name).map_err(|e| dioxus_use_js::JsError::Eval { func: #func_name_static_ident, error: std::sync::Arc::new(e) })?;
                 }),
+                RustType::Result(_) => {
+                    unreachable!("Result cannot be used as an input type")
+                }
                 RustType::JsValue(js_value) => {
                     if js_value.is_option {
                         Some(quote! {
@@ -1365,6 +1430,7 @@ fn generate_invocation(
             RustType::Regular(_) => {
                 format!("let {}=await dioxus.recv();", param.name)
             }
+            RustType::Result(_) => unreachable!("Result cannot be used as an input type"),
             RustType::JsValue(js_value) => {
                 let param_name = &param.name;
                 if js_value.is_option {
@@ -1435,17 +1501,10 @@ fn generate_invocation(
         RustType::Callback(_) => {
             unreachable!("This cannot be an output type, the macro should have panicked earlier.")
         }
-        RustType::JsValue(js_value) => {
-            let check = if js_value.is_option {
-                // null or undefined is valid, since this is e.g. `Option<JsValue>`
-                "if (_v_===null||_v_===undefined){return [true,null];}".to_owned()
-            } else {
-                format!(
-                    "if (_v_===null||_v_===undefined){{console.error(\"The result of `{func_call_full_path}` was null or undefined, but a value is needed for JsValue\");return [true,null];}}"
-                )
-            };
+        RustType::Result(_) | RustType::JsValue(_) => {
+            let converted = output_expression(&func.rust_return_type, "_v_", &func_call_full_path);
             format!(
-                "const _v_={maybe_await} {func_call_full_path}({call_params});{check}let _j_=\"__js-value-\"+crypto.randomUUID();window[_j_]=_v_;return [true,_j_];"
+                "const _v_={maybe_await} {func_call_full_path}({call_params});return [true,{converted}];"
             )
         }
     };
@@ -2674,6 +2733,38 @@ mod tests {
             ts_type_to_rust_type(Some("JsValue | null"), false).to_string(),
             "Option<dioxus_use_js::JsValue>"
         );
+    }
+
+    #[test]
+    fn test_result_types() {
+        assert_eq!(
+            ts_type_to_rust_type(Some("Result<JsValue<MyObject>, string>"), false).to_string(),
+            "Result<dioxus_use_js::JsValue, String>"
+        );
+        assert_eq!(
+            ts_type_to_rust_type(
+                Some("Result<Result<string, Json>, JsValue<MyObject> | null>"),
+                false
+            )
+            .to_string(),
+            "Result<Result<String, dioxus_use_js::SerdeJsonValue>, Option<dioxus_use_js::JsValue>>"
+        );
+    }
+
+    #[test]
+    #[should_panic(expected = "Result cannot be used as input type")]
+    fn test_result_input_is_rejected() {
+        ts_type_to_rust_type(Some("Result<number, string>"), true);
+    }
+
+    #[test]
+    fn test_result_js_value_output_transport() {
+        let rust_type = ts_type_to_rust_type(Some("Result<JsValue<MyObject>, string>"), false);
+        let expression = output_expression(&rust_type, "value", "example");
+        assert!(expression.starts_with("(\"Ok\" in value?{Ok:"));
+        assert!(expression.contains("const _x_=value.Ok"));
+        assert!(expression.contains("window[_j_]=_x_"));
+        assert!(expression.ends_with(":{Err:value.Err})"));
     }
 
     #[test]

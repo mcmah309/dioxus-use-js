@@ -13,6 +13,8 @@ use_js!("js-utils/src/example.ts", "assets/example.js"::{
     createJsObject,
     useJsObject,
     createJsObjectPromise,
+    createResult,
+    createResultJsValue,
     sleep,
     callback1,
     callback2,
@@ -184,6 +186,33 @@ fn App() -> Element {
         Ok(())
     });
 
+    let result_ok_example: Resource<Result<u64, String>> = use_resource(|| async move {
+        let result = createResult(true).await.map_err(|e| e.to_string())??;
+        Ok(result)
+    });
+
+    let result_err_example = use_resource(|| async move {
+        let result = createResult(false).await.map_err(|e| e.to_string())?;
+        match result {
+            Ok(_) => Err("Unexpected Ok result".to_owned()),
+            Err(error) => Ok(error),
+        }
+    });
+
+    let result_js_value_ok_example: Resource<Result<f64, String>> = use_resource(|| async move {
+        let value = createResultJsValue(true).await.map_err(|e| e.to_string())??;
+        let value = useJsObject(33.0, &value).await.map_err(|e| e.to_string())?;
+        Ok(value)
+    });
+
+    let result_js_value_err_example = use_resource(|| async move {
+        let result = createResultJsValue(false).await.map_err(|e| e.to_string())?;
+        match result {
+            Ok(_) => Err("Unexpected Ok result".to_owned()),
+            Err(err) => Ok(err),
+        }
+    });
+
     // Can create instance in one resource then share with others
     let counter: Resource<Result<Counter, JsError>> =
         use_resource(|| async move { Counter::createDefault().await });
@@ -287,6 +316,26 @@ fn App() -> Element {
                 div {
                     h3 { "Callback That Returns An Error (6 should be thrown in js):" }
                     {example_result(&callback6_example.read())}
+                }
+            }
+
+            section {
+                h2 { "Result Examples" }
+                div {
+                    h3 { "Result Ok (expected: `321`):" }
+                    {example_result(&result_ok_example.read())}
+                }
+                div {
+                    h3 { "Result Err (expected: `\"Error text\"`):" }
+                    {example_result(&result_err_example.read())}
+                }
+                div {
+                    h3 { "Result<JsValue> Ok (expected: `58`):" }
+                    {example_result(&result_js_value_ok_example.read())}
+                }
+                div {
+                    h3 { "Result<JsValue> Err (expected: `\"Not created\"`)" }
+                    {example_result(&result_js_value_err_example.read())}
                 }
             }
 
