@@ -149,7 +149,7 @@ type Result<T, E> = { Ok: T } | { Err: E };
 
 For example, `Result<JsValue<MyObject>, string>` maps to `Result<JsValue, String>`.
 
-When an error is thrown on the js side, a generated functions return value is `Err(JsError::Thrown { name })`. The thrown value is not passed through. Instead it is logged on the js side as a `warn`. Think of throwing as a "panic" and the boundary between js and rust as a panic handler. If it is desried to pass a thrown value back, one should wrap the function in a `try`/`catch` and use this `Result` type. Custom handling logic for `Err` side should be implemented and the value passed through the regular channel. The return value of the function generated in this scenario would look like `Ok(Result<T,E>)`.
+When an error is thrown on the js side, a generated functions return value is `Err(JsError::Thrown { name })`. The thrown value is not passed through. Instead it is logged on the js side as a `warn`. Think of throwing as a "panic" and the boundary between js and rust as a panic handler. If it is desired to pass a thrown value back to rust, one should wrap the function in a `try`/`catch` and use this `Result` type. Bespoke handling logic for `Err` side should be implemented and the value return like a regular value. The return value of the function generated in this scenario would look like `Ok(Result<T,E>)`.
 
 ### Integers
 

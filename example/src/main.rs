@@ -394,7 +394,9 @@ fn App() -> Element {
                     {example_result(&tuple_custom_example.read())}
                 }
                 div {
-                    h3 { "JsValue, Result, i64, and u64 (expected: `JsValue: 35, Result: 321, i64: -64, u64: 64`):" }
+                    h3 {
+                        "JsValue, Result, i64, and u64 (expected: `JsValue: 35, Result: 321, i64: -64, u64: 64`):"
+                    }
                     {example_result(&tuple_special_example.read())}
                 }
             }
