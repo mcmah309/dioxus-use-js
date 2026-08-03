@@ -149,7 +149,7 @@ type Result<T, E> = { Ok: T } | { Err: E };
 
 For example, `Result<JsValue<MyObject>, string>` maps to `Result<JsValue, String>`.
 
-When an error is thrown on the js side, a generated functions return value is `Err(JsError::Thrown { name })`. The thrown value is not passed through. Instead it is logged on the js side as a `warn`. Think of throwing as a "panic" and the boundary between js and rust as a panic handler. If it is desired to pass a thrown value back to rust, one should wrap the function in a `try`/`catch` and use this `Result` type. Bespoke handling logic for `Err` should be implemented and the value return like a regular value. The return value of the function generated in this scenario would look like `Ok(Result<T,E>)`.
+When an error is thrown on the js side, a generated functions return value is `Err(JsError::Thrown { name })`. The thrown value is not passed through. Instead it is logged on the js side as a `warn`. Think of throwing as a "panic" and the boundary between js and rust as a panic handler. If it is desired to pass a thrown value back to rust, one should wrap the function in a `try`/`catch` and use this `Result` type. Bespoke handling logic for `Err` should be implemented and the value returned like a regular value. The return value of the function generated in this scenario would look like `Ok(Result<T,E>)`.
 
 ### Integers
 
@@ -193,14 +193,7 @@ pub async fn json() -> Result<Vec<Value> ,JsError>;
 
 ### `JsValue`: Javascript References
 
-This special TypeScript type signals to the macro to **bypass serialization** and pass native JS values as opaque references between Rust and JavaScript. The macro generates the glue code required. The JS value is automatically disposed when all references on the Rust side go out of scope. Only the following are valid representations:
-
-| Valid Ts Uses               | Input  | Output|
-| :-------------------------- | :----- | :---- |
-| `JsValue<T>`, `JsValue`                    | `&JsValue`   | `JsValue` |
-| `Promise<JsValue<T>>`, `Promise<JsValue>`           | `-`   | `JsValue` |
-| `JsValue<T> \| null` `JsValue \| null`           | `Option<&JsValue>`   | `Option<JsValue>` |
-| `Promise<JsValue<T> \| null>`, `Promise<JsValue \| null>`           | `-`   | `Option<JsValue>` |
+This special TypeScript type signals to the macro to **bypass serialization** and pass native JS values as opaque references between Rust and JavaScript. The macro generates the glue code required. The JS value is automatically disposed when all references on the Rust side go out of scope.
 
 ```ts
 type JsValue<T = any> = T;
