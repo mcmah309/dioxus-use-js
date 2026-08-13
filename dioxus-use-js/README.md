@@ -258,18 +258,7 @@ This special TypeScript type signals to the macro that a **Rust async callback**
 ```ts
 type RustCallback<A, R> = (arg: A) => Promise<R>;
 ```
-`A` and `R` can only be:
-- `string` 
-- `number`
-- `boolean`
-- `T | null`
-- `T[]`
-- `Map<T, TT>`
-- `Set<T>`
-- `void`
-- `Json`
-- `i64`
-- `u64`
+For  `A`  and  `R`,  `JsValue`, `Promise`, `Result`, `Drop`, nested  `RustCallback`, literal tuples, non-null unions, and  `any`/`unknown`/`object` are not supported.
 
 Multiple invocations of a `RustCallback` can be inflight at the same time e.g.
 ```js
