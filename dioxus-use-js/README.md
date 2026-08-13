@@ -89,7 +89,7 @@ async fn greeting(from: &str, to: &str) -> Result<String, JsError>;
 > Note: will try to auto-detect an inline or linked sourcemap to better resolve types
 
 ```rust,ignore
-use_js!("bundle.js"::function);
+use_js!("bundle.js"::func);
 use_js!("bundle.js"::{func1, func2});
 use_js!("bundle.js"::*);
 ```
@@ -97,7 +97,7 @@ use_js!("bundle.js"::*);
 ### Explicit Ts Source
 
 ```rust,ignore
-use_js!("source.ts", "bundle.js"::function);
+use_js!("source.ts", "bundle.js"::func);
 use_js!("source.ts", "bundle.js"::{func1, func2});
 use_js!("source.ts", "bundle.js"::*);
 ```
