@@ -5,6 +5,19 @@ use crate::dropping_component::Dropping;
 
 mod dropping_component;
 
+type MyOk = u64;
+type MyErr = String;
+
+#[derive(serde::Serialize, serde::Deserialize)]
+struct CustomInput {
+    value: f64,
+}
+
+#[derive(serde::Serialize, serde::Deserialize)]
+struct CustomOutput {
+    value: f64,
+}
+
 // Use typescript to generate the following functions at compile time
 // with the correct Rust types determined from the source:
 use_js!("js-utils/src/example.ts", "assets/example.js"::{
@@ -16,6 +29,8 @@ use_js!("js-utils/src/example.ts", "assets/example.js"::{
     createResult,
     createResultCustom,
     createResultJsValue,
+    customTypes,
+    customCallback,
     multipleReturn,
     multipleReturnCustom,
     multipleReturnSpecial,
@@ -39,6 +54,7 @@ use_js!("assets/other.js"::*);
 // Note: putting it in its own module is not necessary.
 // In this case it's to avoid errors due to clashing names from the previous use_js! call with this file
 mod sourcemap {
+    use super::{CustomInput, CustomOutput, MyErr, MyOk};
     use dioxus::prelude::*;
     super::use_js!("assets/example.js"::*);
 }
@@ -204,10 +220,10 @@ fn App() -> Element {
     });
 
     let result_custom_example: Resource<Result<String, String>> = use_resource(|| async move {
-        let ok = createResultCustom::<u64, String>(true)
+        let ok = createResultCustom(true)
             .await
             .map_err(|error| error.to_string())??;
-        let result = createResultCustom::<u64, String>(false)
+        let result = createResultCustom(false)
             .await
             .map_err(|error| error.to_string())?;
         let Err(error) = result else {
@@ -215,6 +231,22 @@ fn App() -> Element {
         };
         Ok(format!("{ok}, {error}"))
     });
+
+    let custom_type_example: Resource<Result<String, JsError>> = use_resource(|| async move {
+        let output = customTypes(CustomInput { value: 4.0 }).await?;
+        Ok(format!("{}", output.value))
+    });
+
+    let custom_callback = use_callback(|input: CustomInput| async move {
+        Ok(CustomOutput {
+            value: input.value * 3.0,
+        })
+    });
+    let custom_callback_example: Resource<Result<String, JsError>> =
+        use_resource(move || async move {
+            let output = customCallback(CustomInput { value: 5.0 }, custom_callback).await?;
+            Ok(format!("{}", output.value))
+        });
 
     let result_js_value_ok_example: Resource<Result<f64, String>> = use_resource(|| async move {
         let value = createResultJsValue(true).await.map_err(|e| e.to_string())??;
@@ -236,7 +268,7 @@ fn App() -> Element {
     });
 
     let tuple_custom_example: Resource<Result<String, JsError>> = use_resource(|| async move {
-        let (ok, number, error) = multipleReturnCustom::<u64, String>().await?;
+        let (ok, number, error) = multipleReturnCustom().await?;
         Ok(format!("{ok}, {number}, {error}"))
     });
 
@@ -380,6 +412,18 @@ fn App() -> Element {
                 div {
                     h3 { "Result<JsValue> Err (expected: `\"Not created\"`)" }
                     {example_result(&result_js_value_err_example.read())}
+                }
+            }
+
+            section {
+                h2 { "Custom Serde Type Examples" }
+                div {
+                    h3 { "Function input and output (expected: `8`):" }
+                    {example_result(&custom_type_example.read())}
+                }
+                div {
+                    h3 { "`RustCallback` input and output (expected: `15`):" }
+                    {example_result(&custom_callback_example.read())}
                 }
             }
 

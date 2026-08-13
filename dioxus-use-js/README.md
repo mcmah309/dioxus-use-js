@@ -118,9 +118,12 @@ use_js!("source.ts", "bundle.js"::*);
 | `Map<T, TT>`          | `&HashMap<T, TT>`| `HashMap<T, TT>`   |
 | `Set<T>`              | `&HashSet<T>`    | `HashSet<T>`    |
 | `void`, `undefined`, `never`, `null` | `-` | `()` |
-| `any`, `unknown`, `object`, `-`, `*`     | `impl serde::Serialize` | `T: serde::de::DeserializeOwned` |
+| `any`, `unknown`, `object`, `-`     | `impl serde::Serialize` | `T: serde::de::DeserializeOwned` |
 | `Promise<T>`              | `&T`    | `T`    |
 | `[A,B,..]`            |      `-`     |   `(A,B,..)`   |
+| Any other type (`MyType`) | `MyType` | `MyType` |
+
+> `MyType` must implement the required serde traits.
 
 ### Special Types
 
@@ -132,7 +135,6 @@ use_js!("source.ts", "bundle.js"::*);
 | `Result<T, E>` | `-` | `Result<T, E>` |
 | `RustCallback<T,TT>`     | `dioxus::core::Callback<T, impl Future<Output = Result<TT, serde_json::Value>> + 'static>` | `-`|
 | `Drop`     | `-` | `-`|
-
 
 ---
 ## Special Types

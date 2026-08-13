@@ -72,6 +72,25 @@ export function createResultCustom(ok: boolean): Result<MyOk, MyErr> {
     return ok ? { Ok: 321 } : { Err: "Error text" };
 }
 
+export type CustomInput = {
+    value: number;
+};
+
+export type CustomOutput = {
+    value: number;
+};
+
+export function customTypes(from: CustomInput): CustomOutput {
+    return { value: from.value * 2 };
+}
+
+export async function customCallback(
+    from: CustomInput,
+    callback: RustCallback<CustomInput, CustomOutput>,
+): Promise<CustomOutput> {
+    return callback(from);
+}
+
 export function multipleReturn(): [string, number, boolean] {
     return ["hi", 1, true];
 }

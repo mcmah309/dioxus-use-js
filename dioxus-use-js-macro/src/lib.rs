@@ -639,8 +639,8 @@ fn ts_type_to_rust_type_helper(mut ts_type: &str, can_be_ref: bool) -> Option<St
         "Promise" => {
             panic!("`{}` - nested promises are not valid", ts_type)
         }
-        // "any" | "unknown" | "object" | .. etc.
-        _ => None,
+        "any" | "unknown" | "object" => None,
+        _ => Some(ts_type.to_owned()),
     };
 
     rust_type
@@ -2617,16 +2617,27 @@ mod tests {
     }
 
     #[test]
-    fn test_unknown_types() {
+    fn test_custom_types_are_used_verbatim() {
         assert_eq!(
-            ts_type_to_rust_type(Some("foo"), true).to_string(),
-            "impl dioxus_use_js::SerdeSerialize"
+            ts_type_to_rust_type(Some("MyType"), true).to_string(),
+            "MyType"
         );
         assert_eq!(
-            ts_type_to_rust_type(Some("foo"), false).to_string(),
-            "DeserializeOwned"
+            ts_type_to_rust_type(Some("MyOtherType"), false).to_string(),
+            "MyOtherType"
         );
+        assert_eq!(
+            ts_type_to_rust_type(Some("Array<MyType>"), false).to_string(),
+            "Vec<MyType>"
+        );
+        assert_eq!(
+            ts_type_to_rust_type(Some("MyType | null"), false).to_string(),
+            "Option<MyType>"
+        );
+    }
 
+    #[test]
+    fn test_dynamic_types_use_serde_generics() {
         assert_eq!(
             ts_type_to_rust_type(Some("any"), true).to_string(),
             "impl dioxus_use_js::SerdeSerialize"
@@ -2770,6 +2781,10 @@ mod tests {
             ts_type_to_rust_type(Some("RustCallback<number,void>"), true).to_string(),
             "dioxus::core::Callback<f64, impl Future<Output = Result<(), dioxus_use_js::SerdeJsonValue>> + 'static>"
         );
+        assert_eq!(
+            ts_type_to_rust_type(Some("RustCallback<CustomInput,CustomOutput>"), true).to_string(),
+            "dioxus::core::Callback<CustomInput, impl Future<Output = Result<CustomOutput, dioxus_use_js::SerdeJsonValue>> + 'static>"
+        );
     }
 
     #[test]
@@ -2887,39 +2902,33 @@ mod tests {
     }
 
     #[test]
-    fn test_nested_unknown_outputs_use_distinct_generics() {
+    fn test_nested_custom_outputs_use_verbatim_types() {
         let result_type = ts_type_to_rust_type(Some("Result<MyOk, MyErr>"), false);
         let (return_type, generics) = return_type_tokens(&result_type, None);
         assert_eq!(
             return_type.to_string(),
-            "Result < Result < DeserializeOwned1 , DeserializeOwned2 > , dioxus_use_js :: JsError >"
+            "Result < Result < MyOk , MyErr > , dioxus_use_js :: JsError >"
         );
-        assert_eq!(
-            generics.unwrap().to_string(),
-            "< DeserializeOwned1 : dioxus_use_js :: SerdeDeDeserializeOwned , DeserializeOwned2 : dioxus_use_js :: SerdeDeDeserializeOwned >"
-        );
+        assert!(generics.is_none());
 
         let tuple_type = ts_type_to_rust_type(Some("[MyOk, number, MyErr]"), false);
         let (return_type, generics) = return_type_tokens(&tuple_type, None);
         assert_eq!(
             return_type.to_string(),
-            "Result < (DeserializeOwned1 , f64 , DeserializeOwned2) , dioxus_use_js :: JsError >"
+            "Result < (MyOk , f64 , MyErr) , dioxus_use_js :: JsError >"
         );
-        assert!(generics.is_some());
+        assert!(generics.is_none());
     }
 
     #[test]
-    fn test_single_unknown_output_keeps_existing_generic_name() {
+    fn test_single_custom_output_has_no_generic() {
         let return_type = ts_type_to_rust_type(Some("MyValue"), false);
         let (return_type, generics) = return_type_tokens(&return_type, None);
         assert_eq!(
             return_type.to_string(),
-            "Result < DeserializeOwned , dioxus_use_js :: JsError >"
+            "Result < MyValue , dioxus_use_js :: JsError >"
         );
-        assert_eq!(
-            generics.unwrap().to_string(),
-            "< DeserializeOwned : dioxus_use_js :: SerdeDeDeserializeOwned >"
-        );
+        assert!(generics.is_none());
     }
 
     #[test]
@@ -3060,6 +3069,6 @@ mod tests {
         assert_eq!(create.is_async, false);
         assert_eq!(create.is_static, true);
         assert_eq!(create.params.len(), 0);
-        // Note: The return type MyClass would be parsed as JsValue or unknown type
+        assert_eq!(create.rust_return_type.to_string(), "MyClass");
     }
 }
