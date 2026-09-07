@@ -8,7 +8,7 @@ edition = "2024"
 
 [dependencies]
 dioxus-use-js = { path = "../dioxus-use-js" }
-dioxus = { version = "0.7.0" }
+dioxus = { git = "https://github.com/mcmah309/dioxus.git", branch = "fix_liveview_filepicker" }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 
