@@ -14,7 +14,7 @@ serde = { workspace = true, features = ["rc"] }
 serde_json = { workspace = true }
 
 bon = { workspace = true, optional = true }
-dioxus = { workspace = true, features = ["lib", "logger"] }
+dioxus = { workspace = true }
 
 [features]
 # Adds convenience build runners for js/ts projects to use in build.rs

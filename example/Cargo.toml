@@ -8,7 +8,7 @@ edition = "2024"
 
 [dependencies]
 dioxus-use-js = { workspace = true }
-dioxus = { workspace = true, default-features = true }
+dioxus = { workspace = true, features = ["devtools", "launch"] }
 serde = { workspace = true, features = ["derive"] }
 serde_json = { workspace = true }
 

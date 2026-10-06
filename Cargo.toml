@@ -7,25 +7,27 @@ members = [
     "example"
 ]
 
+# Dependency sources and versions are owned here; members select optional dependencies.
+# Keep only shared features here, disabling defaults when consumers need a subset.
 [workspace.dependencies]
 # Local crates
 dioxus-use-js = { path = "dioxus-use-js" }
-dioxus-use-js-macro = { version = "=0.5.0", path = "dioxus-use-js-macro" }
+dioxus-use-js-macro = { version = "0.5.0", path = "dioxus-use-js-macro" }
 
 # External crates
 base64 = "0.23.1"
 blake3 = "1.8.7"
 bon = "3.10.2"
 debugid = "0.8.0"
-dioxus = { git = "https://github.com/mcmah309/dioxus.git", branch = "fix_liveview_filepicker", default-features = false }
+dioxus = { git = "https://github.com/mcmah309/dioxus.git", branch = "fix_liveview_filepicker", default-features = false, features = ["lib", "logger"] }
 indexmap = "2.14.2"
 proc-macro2 = "1.0.107"
 quote = "1.0.47"
 serde = "1.0.229"
 serde_json = "1.0.151"
 sourcemap = "9.3.2"
-swc_common = { version = "26.0.0", default-features = false }
-swc_ecma_ast = { version = "29.0.2", default-features = false }
-swc_ecma_parser = { version = "46.0.0", default-features = false }
-swc_ecma_visit = { version = "29.0.0", default-features = false }
+swc_common = "26.0.0"
+swc_ecma_ast = "29.0.2"
+swc_ecma_parser = { version = "46.0.0", default-features = false, features = ["typescript"] }
+swc_ecma_visit = "29.0.0"
 syn = { version = "3.0.6", features = ["full"] }
