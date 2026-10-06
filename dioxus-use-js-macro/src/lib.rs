@@ -849,7 +849,7 @@ impl Visit for JsVisitor {
                         ClassMember::Method(method) => {
                             let method_name = match &method.key {
                                 PropName::Ident(ident) => ident.sym.to_string(),
-                                PropName::Str(str_lit) => str_lit.value.to_string(),
+                                PropName::Str(str_lit) => str_lit.value.to_string_lossy().into_owned(),
                                 _ => continue,
                             };
 
@@ -964,7 +964,7 @@ impl Visit for JsVisitor {
                 ClassMember::Method(method) => {
                     let method_name = match &method.key {
                         PropName::Ident(ident) => ident.sym.to_string(),
-                        PropName::Str(str_lit) => str_lit.value.to_string(),
+                        PropName::Str(str_lit) => str_lit.value.to_string_lossy().into_owned(),
                         _ => continue,
                     };
 

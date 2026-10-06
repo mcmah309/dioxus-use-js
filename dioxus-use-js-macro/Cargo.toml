@@ -15,7 +15,7 @@ proc-macro = true
 proc-macro2 = { workspace = true }
 quote = { workspace = true }
 syn = { workspace = true }
-swc_ecma_parser = { workspace = true }
+swc_ecma_parser = { workspace = true, features = ["typescript"] }
 swc_ecma_ast = { workspace = true }
 swc_ecma_visit = { workspace = true }
 swc_common = { workspace = true }
