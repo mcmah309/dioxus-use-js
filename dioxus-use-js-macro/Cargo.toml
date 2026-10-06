@@ -12,15 +12,15 @@ repository = "https://github.com/mcmah309/dioxus-use-js"
 proc-macro = true
 
 [dependencies]
-proc-macro2 = "1.0.103"
-quote = "1.0.41"
-syn = { version = "2.0.108", features = ["full"] }
-swc_ecma_parser = { version = "25.0.0", default-features = false }
-swc_ecma_ast = { version = "16.0.0", default-features = false }
-swc_ecma_visit = { version = "16.0.0", default-features = false }
-swc_common = { version = "15.0.0", default-features = false }
-indexmap = "2"
-blake3="1.8"
-base64="0.22"
-sourcemap = "9.3.2"
-debugid = "0.8.0"
+proc-macro2 = { workspace = true }
+quote = { workspace = true }
+syn = { workspace = true }
+swc_ecma_parser = { workspace = true }
+swc_ecma_ast = { workspace = true }
+swc_ecma_visit = { workspace = true }
+swc_common = { workspace = true }
+indexmap = { workspace = true }
+blake3={workspace = true}
+base64={workspace = true}
+sourcemap = { workspace = true }
+debugid = { workspace = true }

@@ -9,17 +9,12 @@ repository = "https://github.com/mcmah309/dioxus-use-js"
 
 
 [dependencies]
-dioxus-use-js-macro = { version = "=0.5.0", path = "../dioxus-use-js-macro" }
-serde = { version = "1", features = ["rc"]}
-serde_json = { version = "1" }
+dioxus-use-js-macro = { workspace = true }
+serde = { workspace = true, features = ["rc"] }
+serde_json = { workspace = true }
 
-bon = { version = "3", optional = true }
-
-[dependencies.dioxus]
-git = "https://github.com/mcmah309/dioxus.git"
-branch = "fix_liveview_filepicker"
-default-features = false
-features = ["lib", "logger"]
+bon = { workspace = true, optional = true }
+dioxus = { workspace = true, features = ["lib", "logger"] }
 
 [features]
 # Adds convenience build runners for js/ts projects to use in build.rs

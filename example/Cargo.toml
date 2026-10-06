@@ -7,13 +7,13 @@ edition = "2024"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-dioxus-use-js = { path = "../dioxus-use-js" }
-dioxus = { git = "https://github.com/mcmah309/dioxus.git", branch = "fix_liveview_filepicker" }
-serde = { version = "1", features = ["derive"] }
-serde_json = "1"
+dioxus-use-js = { workspace = true }
+dioxus = { workspace = true, default-features = true }
+serde = { workspace = true, features = ["derive"] }
+serde_json = { workspace = true }
 
 [build-dependencies]
-dioxus-use-js = { path = "../dioxus-use-js", features = ["build"] }
+dioxus-use-js = { workspace = true, features = ["build"] }
 
 [features]
 default = ["web"]
